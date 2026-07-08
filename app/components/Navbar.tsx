@@ -9,7 +9,7 @@ export default function Navbar() {
         <nav className="hidden gap-8 text-sm font-semibold md:flex">
           <a href="/">Home</a>
           <a href="#services">Services</a>
-          <a href="#schedule">Schedule</a>
+          <a href="/schedule">Schedule</a>
           <a href="#contact">Contact</a>
         </nav>
 

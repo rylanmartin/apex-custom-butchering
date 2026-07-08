@@ -28,7 +28,7 @@ export default function Home() {
 
         <div className="flex flex-col justify-center gap-4 sm:flex-row">
           <a
-            href="#schedule"
+            href="/schedule"
             className="rounded-lg bg-red-700 px-8 py-3 font-bold text-white hover:bg-red-800"
           >
             Schedule Processing
