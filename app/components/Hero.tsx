@@ -6,7 +6,7 @@ export default function Hero() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-8 flex justify-center">
           <Image
-            src="/images/apex-logo.jpg.JPG"
+            src="/images/apex-logo.png"
             alt="APEX Custom Butchering Logo"
             width={260}
             height={260}

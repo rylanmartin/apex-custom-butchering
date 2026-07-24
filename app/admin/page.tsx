@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { supabase } from "../supabase";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 
 type ShopInformation = {
   name: string;
