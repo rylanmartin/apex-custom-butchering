@@ -1,500 +1,334 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+type AppointmentRecord = Record<string, unknown> & {
+  id?: string | number;
+};
+
+type DashboardStats = {
+  total: number;
+  today: number;
+  upcoming: number;
+  completed: number;
+};
 
 const supabase = createClient();
 
-type ShopInformation = {
-  name: string;
-  phone: string;
-  address: string;
-};
-
-type GalleryImage = {
-  id: string;
-  image_url: string;
-};
-
-const DEFAULT_SHOP_INFORMATION: ShopInformation = {
-  name: "Apex Custom Butchering",
-  phone: "(989) 323-1187",
-  address: "155 W Henderson Rd, Owosso, MI 48867",
-};
-
-const DEFAULT_GALLERY_TITLE = "Our Gallery";
-
-function PhoneIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className="h-5 w-5"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106a1.125 1.125 0 0 0-1.173.417l-.97 1.293a1.125 1.125 0 0 1-1.21.38 12.035 12.035 0 0 1-7.143-7.143 1.125 1.125 0 0 1 .38-1.21l1.293-.97c.37-.278.534-.758.417-1.173L6.963 3.102A1.125 1.125 0 0 0 5.872 2.25H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z"
-      />
-    </svg>
-  );
-}
-
 function CalendarIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      className="h-5 w-5"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M6.75 3v2.25M17.25 3v2.25M3.75 9.75h16.5M5.25 5.25h13.5A1.5 1.5 0 0 1 20.25 6.75v12A1.5 1.5 0 0 1 18.75 20.25H5.25a1.5 1.5 0 0 1-1.5-1.5v-12a1.5 1.5 0 0 1 1.5-1.5Z"
-      />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 9.75h16.5M5.25 5.25h13.5A1.5 1.5 0 0 1 20.25 6.75v12a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5v-12a1.5 1.5 0 0 1 1.5-1.5Z" />
     </svg>
   );
 }
 
-function KnifeIcon() {
+function SettingsIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      className="h-9 w-9"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="m4.5 19.5 5.15-5.15m0 0 2.12 2.12m-2.12-2.12 8.86-8.86a2.25 2.25 0 0 1 3.18 3.18l-8.86 8.86m-3.18-3.18 3.18 3.18m0 0-2.12 2.12a2.25 2.25 0 0 1-3.18-3.18l2.12-2.12"
-      />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.592c.55 0 1.02.398 1.11.94l.213 1.274c.059.355.292.657.616.814.071.034.141.071.21.11.31.177.686.199 1.01.073l1.164-.454a1.125 1.125 0 0 1 1.37.492l1.296 2.244a1.125 1.125 0 0 1-.26 1.432l-.95.78c-.28.23-.42.59-.41.95.002.076.002.153 0 .229-.01.36.13.72.41.95l.95.78c.42.344.53.94.26 1.432l-1.296 2.244a1.125 1.125 0 0 1-1.37.492l-1.164-.454a1.145 1.145 0 0 0-1.01.073c-.069.039-.139.076-.21.11-.324.157-.557.459-.616.814l-.213 1.274c-.09.542-.56.94-1.11.94h-2.592c-.55 0-1.02-.398-1.11-.94l-.213-1.274a1.141 1.141 0 0 0-.616-.814 6.774 6.774 0 0 1-.21-.11 1.145 1.145 0 0 0-1.01-.073l-1.164.454a1.125 1.125 0 0 1-1.37-.492L3.67 16.84a1.125 1.125 0 0 1 .26-1.432l.95-.78c.28-.23.42-.59.41-.95a7.19 7.19 0 0 1 0-.229c.01-.36-.13-.72-.41-.95l-.95-.78a1.125 1.125 0 0 1-.26-1.432l1.296-2.244a1.125 1.125 0 0 1 1.37-.492l1.164.454c.324.126.7.104 1.01-.073.069-.039.139-.076.21-.11.324-.157.557-.459.616-.814l.213-1.274Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
     </svg>
   );
 }
 
-function ShieldIcon() {
+function GalleryIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      className="h-9 w-9"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M12 3 4.5 6v5.25c0 4.97 3.163 8.566 7.5 9.75 4.337-1.184 7.5-4.78 7.5-9.75V6L12 3Z"
-      />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="m8.75 12 2.1 2.1 4.4-4.4"
-      />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 5.25A1.5 1.5 0 0 1 5.25 3.75h13.5a1.5 1.5 0 0 1 1.5 1.5v13.5a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5V5.25Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 16.5 4.72-4.72a1.5 1.5 0 0 1 2.12 0l2.16 2.16 1.22-1.22a1.5 1.5 0 0 1 2.12 0l4.16 4.16M15.75 8.25h.008v.008h-.008V8.25Z" />
     </svg>
   );
 }
 
-function HandsIcon() {
+function LogoutIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      className="h-9 w-9"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M8.25 11.25 5.5 8.5a1.768 1.768 0 0 0-2.5 2.5l4.75 4.75A4.25 4.25 0 0 0 10.755 17H12"
-      />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="m15.75 11.25 2.75-2.75A1.768 1.768 0 0 1 21 11l-4.75 4.75A4.25 4.25 0 0 1 13.245 17H12"
-      />
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M9 8.25 12 11.5l3-3.25"
-      />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l3-3m0 0 3 3m-3-3v12" />
     </svg>
   );
 }
 
-function normalizePhoneForLink(phone: string) {
-  return phone.replace(/[^\d+]/g, "");
+function getString(record: AppointmentRecord, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number") return String(value);
+  }
+  return "";
 }
 
-export default function HomePage() {
-  const [shopInformation, setShopInformation] =
-    useState<ShopInformation>(DEFAULT_SHOP_INFORMATION);
-  const [galleryTitle, setGalleryTitle] = useState(DEFAULT_GALLERY_TITLE);
-  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
-  const [galleryLoading, setGalleryLoading] = useState(true);
+function getAppointmentDate(record: AppointmentRecord) {
+  const raw = getString(record, [
+    "appointment_date",
+    "dropoff_date",
+    "scheduled_date",
+    "date",
+    "processing_date",
+    "created_at",
+  ]);
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getAppointmentName(record: AppointmentRecord) {
+  const direct = getString(record, [
+    "customer_name",
+    "name",
+    "full_name",
+    "farmer_name",
+    "contact_name",
+  ]);
+  if (direct) return direct;
+  const first = getString(record, ["first_name", "firstName"]);
+  const last = getString(record, ["last_name", "lastName"]);
+  return `${first} ${last}`.trim() || "Customer";
+}
+
+function getAppointmentAnimal(record: AppointmentRecord) {
+  return getString(record, [
+    "animal_type",
+    "species",
+    "animal",
+    "livestock_type",
+    "processing_type",
+  ]) || "Processing appointment";
+}
+
+function getAppointmentStatus(record: AppointmentRecord) {
+  return getString(record, ["status", "appointment_status", "processing_status"]) || "scheduled";
+}
+
+function formatDate(date: Date | null) {
+  if (!date) return "Date not listed";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function formatTime(record: AppointmentRecord, date: Date | null) {
+  const rawTime = getString(record, ["appointment_time", "dropoff_time", "scheduled_time", "time"]);
+  if (rawTime) return rawTime;
+  if (!date) return "";
+  const hasTime = date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0;
+  if (!hasTime) return "";
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function statusClasses(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized.includes("complete") || normalized.includes("picked") || normalized.includes("finished")) return "bg-emerald-100 text-emerald-800";
+  if (normalized.includes("cancel") || normalized.includes("declin") || normalized.includes("no show")) return "bg-red-100 text-red-800";
+  if (normalized.includes("progress") || normalized.includes("processing") || normalized.includes("cut")) return "bg-amber-100 text-amber-800";
+  return "bg-blue-100 text-blue-800";
+}
+
+export default function AdminDashboardPage() {
+  const router = useRouter();
+  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
 
-    async function loadHomepageContent() {
-      const [settingsResult, galleryResult] = await Promise.all([
-        supabase
-          .from("shop_settings")
-          .select("setting_key, setting_value")
-          .in("setting_key", ["shop_information", "gallery_title"]),
-        supabase
-          .from("gallery_images")
-          .select("id, image_url")
-          .order("created_at", { ascending: true }),
-      ]);
-
-      if (!isMounted) {
+    async function loadDashboard() {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (!active) return;
+      if (authError || !user) {
+        router.replace("/login");
         return;
       }
 
-      if (!settingsResult.error) {
-        for (const row of settingsResult.data ?? []) {
-          if (row.setting_key === "shop_information") {
-            const value = row.setting_value as Partial<ShopInformation>;
+      setAuthChecking(false);
 
-            setShopInformation({
-              name: value.name || DEFAULT_SHOP_INFORMATION.name,
-              phone: value.phone || DEFAULT_SHOP_INFORMATION.phone,
-              address: value.address || DEFAULT_SHOP_INFORMATION.address,
-            });
-          }
+      const result = await supabase
+        .from("appointments")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
 
-          if (row.setting_key === "gallery_title") {
-            const value = row.setting_value as { title?: string };
-            setGalleryTitle(value.title?.trim() || DEFAULT_GALLERY_TITLE);
-          }
-        }
+      if (!active) return;
+
+      if (result.error) {
+        console.error("Unable to load appointments:", result.error);
+        setLoadError("The dashboard loaded, but appointments could not be retrieved.");
+        setAppointments([]);
       } else {
-        console.error("Unable to load homepage settings:", settingsResult.error);
+        setAppointments((result.data ?? []) as AppointmentRecord[]);
       }
 
-      if (!galleryResult.error) {
-        setGalleryImages(galleryResult.data ?? []);
-      } else {
-        console.error("Unable to load gallery images:", galleryResult.error);
-      }
-
-      setGalleryLoading(false);
+      setLoading(false);
     }
 
-    loadHomepageContent();
-
+    loadDashboard();
     return () => {
-      isMounted = false;
+      active = false;
     };
-  }, []);
+  }, [router]);
 
-  const phoneHref = `tel:${normalizePhoneForLink(shopInformation.phone)}`;
+  const sortedAppointments = useMemo(() => {
+    return [...appointments].sort((a, b) => {
+      const aDate = getAppointmentDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const bDate = getAppointmentDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      return aDate - bDate;
+    });
+  }, [appointments]);
+
+  const stats = useMemo<DashboardStats>(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
+    let today = 0;
+    let upcoming = 0;
+    let completed = 0;
+
+    for (const appointment of appointments) {
+      const date = getAppointmentDate(appointment);
+      const status = getAppointmentStatus(appointment).toLowerCase();
+      if (status.includes("complete") || status.includes("picked") || status.includes("finished")) completed += 1;
+      if (date) {
+        const timestamp = date.getTime();
+        if (timestamp >= todayStart && timestamp < tomorrowStart) today += 1;
+        if (timestamp >= todayStart) upcoming += 1;
+      }
+    }
+
+    return { total: appointments.length, today, upcoming, completed };
+  }, [appointments]);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
+
+  if (authChecking) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-stone-100 px-6">
+        <div className="rounded-lg bg-white px-8 py-6 text-center shadow-sm">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-stone-200 border-t-red-800" />
+          <p className="mt-4 font-semibold text-stone-700">Checking administrator access...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen bg-stone-50 text-stone-900">
-      <section className="relative isolate flex min-h-[760px] items-center overflow-hidden bg-stone-950">
-        <img
-          src="/apex-hero.jpg"
-          alt=""
-          className="absolute inset-0 -z-30 h-full w-full object-cover"
-        />
+    <main className="min-h-screen bg-stone-100 text-stone-950">
+      <header className="border-b border-white/10 bg-stone-950 text-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-12">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.32em] text-red-400">Apex Custom Butchering</p>
+            <h1 className="mt-2 text-3xl font-black uppercase tracking-tight">Admin Dashboard</h1>
+          </div>
 
-        <div className="absolute inset-0 -z-20 bg-black/65" />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-black/35 via-transparent to-black/55" />
-
-        <div className="mx-auto flex w-full max-w-7xl flex-col items-center px-6 py-24 text-center sm:px-8 lg:px-12">
-          <img
-            src="/images/apex-logo.png"
-            alt={`${shopInformation.name} logo`}
-            className="mb-8 h-auto w-full max-w-[260px] opacity-90 drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)] sm:max-w-[330px]"
-          />
-
-          <p className="mb-5 text-sm font-semibold uppercase tracking-[0.34em] text-stone-200 sm:text-base">
-            Custom Processing Done Right
-          </p>
-
-          <h1 className="max-w-5xl text-4xl font-black uppercase leading-[0.95] tracking-tight text-white sm:text-6xl lg:text-7xl">
-            Quality You Can Trust
-          </h1>
-
-          <p className="mt-6 max-w-2xl text-base leading-7 text-stone-200 sm:text-lg">
-            Professional custom butchering with careful handling, dependable
-            service, and attention to every order.
-          </p>
-
-          <div className="mt-10 flex w-full max-w-xl flex-col justify-center gap-4 sm:flex-row">
-            <Link
-              href="/schedule"
-              className="inline-flex min-h-14 flex-1 items-center justify-center gap-3 rounded-md bg-red-800 px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white shadow-lg transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 focus:ring-offset-stone-950"
-            >
-              <CalendarIcon />
-              Schedule Processing
+          <div className="flex flex-wrap gap-3">
+            <Link href="/" className="inline-flex items-center justify-center rounded-md border border-white/25 px-4 py-3 text-sm font-bold transition hover:bg-white hover:text-stone-950">
+              View Website
             </Link>
-
-            <a
-              href={phoneHref}
-              className="inline-flex min-h-14 flex-1 items-center justify-center gap-3 rounded-md border border-white/60 bg-white/10 px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white backdrop-blur-sm transition hover:bg-white hover:text-stone-950 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-stone-950"
-            >
-              <PhoneIcon />
-              Call Now
-            </a>
+            <button type="button" onClick={handleSignOut} disabled={signingOut} className="inline-flex items-center justify-center gap-2 rounded-md bg-red-800 px-4 py-3 text-sm font-bold transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <LogoutIcon />
+              {signingOut ? "Signing Out..." : "Sign Out"}
+            </button>
           </div>
-
-          <p className="mt-6 text-sm font-medium text-stone-300">
-            {shopInformation.phone}
-          </p>
         </div>
-      </section>
+      </header>
 
-      <section className="border-b border-stone-200 bg-white py-20 sm:py-24">
-        <div className="mx-auto max-w-7xl px-6 sm:px-8 lg:px-12">
-          <div className="mx-auto max-w-3xl text-center">
-            <p className="text-sm font-bold uppercase tracking-[0.3em] text-red-800">
-              Inside Apex
-            </p>
+      <div className="mx-auto max-w-7xl px-6 py-10 sm:px-8 lg:px-12">
+        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          {[['Total Loaded', stats.total], ['Today', stats.today], ['Upcoming', stats.upcoming], ['Completed', stats.completed]].map(([label, value]) => (
+            <article key={String(label)} className="rounded-lg border border-stone-200 bg-white p-6 shadow-sm">
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-stone-500">{label}</p>
+              <p className="mt-3 text-4xl font-black">{value}</p>
+            </article>
+          ))}
+        </section>
 
-            <h2 className="mt-4 text-3xl font-black uppercase tracking-tight text-stone-950 sm:text-5xl">
-              {galleryTitle}
-            </h2>
+        <section className="mt-8 grid gap-5 md:grid-cols-3">
+          <Link href="/schedule" className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white"><CalendarIcon /></div>
+            <h2 className="mt-5 text-xl font-black uppercase tracking-tight">New Appointment</h2>
+            <p className="mt-2 leading-7 text-stone-600">Open the public scheduling form to create or test a booking.</p>
+          </Link>
 
-            <div className="mx-auto mt-6 h-1 w-16 bg-red-800" />
+          <Link href="/admin/settings" className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white"><SettingsIcon /></div>
+            <h2 className="mt-5 text-xl font-black uppercase tracking-tight">Shop Settings</h2>
+            <p className="mt-2 leading-7 text-stone-600">Manage capacity, business details, closures, processing days, and appointment times.</p>
+          </Link>
+
+          <Link href="/admin/settings#gallery" className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white"><GalleryIcon /></div>
+            <h2 className="mt-5 text-xl font-black uppercase tracking-tight">Homepage Gallery</h2>
+            <p className="mt-2 leading-7 text-stone-600">Change the gallery title and manage the images shown on the homepage.</p>
+          </Link>
+        </section>
+
+        <section className="mt-8 overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-stone-200 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-red-800">Scheduling</p>
+              <h2 className="mt-1 text-2xl font-black uppercase tracking-tight">Appointments</h2>
+            </div>
+            <button type="button" onClick={() => window.location.reload()} className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold transition hover:border-stone-900">Refresh</button>
           </div>
 
-          {galleryLoading ? (
-            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {[0, 1, 2].map((item) => (
-                <div
-                  key={item}
-                  className="aspect-[4/3] animate-pulse rounded-sm bg-stone-200"
-                />
-              ))}
+          {loadError ? (
+            <div className="m-6 rounded-md border border-amber-300 bg-amber-50 px-5 py-4 text-amber-900">
+              <p className="font-bold">Appointments could not be loaded.</p>
+              <p className="mt-1 text-sm">Confirm the table is named <code>appointments</code> and that the signed-in administrator has permission to read it.</p>
             </div>
-          ) : galleryImages.length > 0 ? (
-            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {galleryImages.map((image, index) => (
-                <figure
-                  key={image.id}
-                  className="group relative aspect-[4/3] overflow-hidden rounded-sm bg-stone-200 shadow-sm"
-                >
-                  <img
-                    src={image.image_url}
-                    alt={`${galleryTitle} image ${index + 1}`}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-                  />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
-                </figure>
-              ))}
+          ) : null}
+
+          {loading ? (
+            <div className="px-6 py-14 text-center">
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-stone-200 border-t-red-800" />
+              <p className="mt-4 font-semibold text-stone-600">Loading appointments...</p>
+            </div>
+          ) : sortedAppointments.length === 0 ? (
+            <div className="px-6 py-14 text-center">
+              <p className="text-lg font-bold">No appointments found.</p>
+              <p className="mt-2 text-stone-600">New bookings will appear here after they are submitted.</p>
             </div>
           ) : (
-            <div className="mt-12 rounded-sm border border-dashed border-stone-300 bg-stone-50 px-6 py-14 text-center">
-              <p className="text-base font-semibold text-stone-700">
-                Gallery pictures will appear here after they are added in Shop
-                Settings.
-              </p>
+            <div className="divide-y divide-stone-200">
+              {sortedAppointments.map((appointment, index) => {
+                const appointmentId = appointment.id !== undefined ? String(appointment.id) : String(index);
+                const date = getAppointmentDate(appointment);
+                const time = formatTime(appointment, date);
+                const name = getAppointmentName(appointment);
+                const animal = getAppointmentAnimal(appointment);
+                const status = getAppointmentStatus(appointment);
+
+                return (
+                  <article key={appointmentId} className="grid gap-4 px-6 py-5 transition hover:bg-stone-50 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
+                    <div>
+                      <h3 className="text-lg font-black">{name}</h3>
+                      <p className="mt-1 text-stone-600">{animal}</p>
+                    </div>
+                    <div>
+                      <p className="font-bold">{formatDate(date)}</p>
+                      {time ? <p className="mt-1 text-sm text-stone-600">{time}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 md:justify-end">
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] ${statusClasses(status)}`}>{status}</span>
+                      {appointment.id !== undefined ? (
+                        <Link href={`/admin/${appointmentId}`} className="rounded-md bg-stone-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800">Open</Link>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
-        </div>
-      </section>
-
-      <section className="bg-stone-100 py-20 sm:py-28">
-        <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:px-12">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.3em] text-red-800">
-              Our Commitment
-            </p>
-
-            <h2 className="mt-4 text-4xl font-black uppercase leading-tight tracking-tight text-stone-950 sm:text-5xl">
-              Quality You Can Trust
-            </h2>
-
-            <div className="mt-6 h-1 w-16 bg-red-800" />
-
-            <p className="mt-8 max-w-2xl text-lg leading-8 text-stone-700">
-              At Apex Custom Butchering, every animal is handled with care and
-              every order is processed with precision. We focus on clean work,
-              dependable communication, and cuts prepared to your instructions.
-            </p>
-
-            <p className="mt-5 max-w-2xl leading-7 text-stone-600">
-              From scheduling through pickup, our goal is straightforward:
-              provide honest service and quality processing your family can rely
-              on.
-            </p>
-
-            <div className="mt-9 flex flex-col gap-4 sm:flex-row">
-              <Link
-                href="/schedule"
-                className="inline-flex items-center justify-center gap-3 rounded-md bg-red-800 px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white transition hover:bg-red-700"
-              >
-                <CalendarIcon />
-                Schedule Processing
-              </Link>
-
-              <a
-                href={phoneHref}
-                className="inline-flex items-center justify-center gap-3 rounded-md border border-stone-400 bg-white px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-stone-900 transition hover:border-stone-900"
-              >
-                <PhoneIcon />
-                {shopInformation.phone}
-              </a>
-            </div>
-          </div>
-
-          <div className="relative min-h-[440px] overflow-hidden rounded-sm bg-stone-300 shadow-xl">
-            <img
-              src="/images/-beef.jpg"
-              alt="Custom meat processing at Apex Custom Butchering"
-              loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
-            <div className="absolute bottom-0 left-0 right-0 p-7 text-white">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-stone-200">
-                Local Service
-              </p>
-              <p className="mt-2 text-2xl font-bold">
-                Careful work from start to finish.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white py-20 sm:py-24">
-        <div className="mx-auto max-w-7xl px-6 sm:px-8 lg:px-12">
-          <div className="grid gap-8 md:grid-cols-3">
-            <article className="border-t-4 border-red-800 bg-stone-50 p-8 shadow-sm">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-800 text-white">
-                <KnifeIcon />
-              </div>
-              <h3 className="mt-6 text-xl font-black uppercase tracking-tight text-stone-950">
-                Custom Cuts
-              </h3>
-              <p className="mt-3 leading-7 text-stone-600">
-                Your order is processed according to the cut instructions you
-                provide, not a one-size-fits-all list.
-              </p>
-            </article>
-
-            <article className="border-t-4 border-red-800 bg-stone-50 p-8 shadow-sm">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-800 text-white">
-                <ShieldIcon />
-              </div>
-              <h3 className="mt-6 text-xl font-black uppercase tracking-tight text-stone-950">
-                Careful Handling
-              </h3>
-              <p className="mt-3 leading-7 text-stone-600">
-                Clean procedures, organized tracking, and careful attention help
-                protect the quality of every order.
-              </p>
-            </article>
-
-            <article className="border-t-4 border-red-800 bg-stone-50 p-8 shadow-sm">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-800 text-white">
-                <HandsIcon />
-              </div>
-              <h3 className="mt-6 text-xl font-black uppercase tracking-tight text-stone-950">
-                Dependable Service
-              </h3>
-              <p className="mt-3 leading-7 text-stone-600">
-                Straightforward scheduling and clear communication keep the
-                process simple from drop-off to pickup.
-              </p>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-red-900 py-16 text-white">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-8 px-6 text-center sm:px-8 lg:flex-row lg:px-12 lg:text-left">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.3em] text-red-200">
-              Ready to Get Scheduled?
-            </p>
-            <h2 className="mt-3 text-3xl font-black uppercase tracking-tight sm:text-4xl">
-              Reserve Your Processing Date
-            </h2>
-          </div>
-
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-            <Link
-              href="/schedule"
-              className="inline-flex items-center justify-center gap-3 rounded-md bg-white px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-red-900 transition hover:bg-stone-100"
-            >
-              <CalendarIcon />
-              Schedule Now
-            </Link>
-
-            <a
-              href={phoneHref}
-              className="inline-flex items-center justify-center gap-3 rounded-md border border-white/70 px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-red-900"
-            >
-              <PhoneIcon />
-              Call Now
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <footer className="bg-stone-950 py-12 text-stone-300">
-        <div className="mx-auto grid max-w-7xl gap-8 px-6 sm:px-8 md:grid-cols-3 lg:px-12">
-          <div>
-            <img
-              src="/images/apex-logo.png"
-              alt={`${shopInformation.name} logo`}
-              className="h-auto w-44 opacity-85"
-            />
-          </div>
-
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">
-              Contact
-            </h2>
-            <a
-              href={phoneHref}
-              className="mt-4 block transition hover:text-white"
-            >
-              {shopInformation.phone}
-            </a>
-            <p className="mt-2 leading-6">{shopInformation.address}</p>
-          </div>
-
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">
-              Scheduling
-            </h2>
-            <p className="mt-4 leading-6">
-              Use the online scheduler to reserve an available processing time.
-            </p>
-            <Link
-              href="/schedule"
-              className="mt-4 inline-block font-semibold text-white underline decoration-red-700 decoration-2 underline-offset-4"
-            >
-              Schedule Processing
-            </Link>
-          </div>
-        </div>
-
-        <div className="mx-auto mt-10 max-w-7xl border-t border-white/10 px-6 pt-6 text-sm text-stone-500 sm:px-8 lg:px-12">
-          © {new Date().getFullYear()} {shopInformation.name}. All rights
-          reserved.
-        </div>
-      </footer>
+        </section>
+      </div>
     </main>
   );
 }
