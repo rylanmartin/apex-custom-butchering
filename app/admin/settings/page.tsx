@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../supabase";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "../../../lib/supabase/client";
+
+const supabase = createClient();
 
 type WeeklyCapacity = {
   beef: number;
@@ -90,6 +92,8 @@ export default function AdminSettingsPage() {
 
   const [uploadingGalleryImage, setUploadingGalleryImage] =
     useState(false);
+
+  const galleryFileInputRef = useRef<HTMLInputElement>(null);
 
   const sortedClosedDates = useMemo(
     () => [...closedDates].sort(),
@@ -343,29 +347,53 @@ export default function AdminSettingsPage() {
       )
     );
   }
-    async function handleGalleryUpload(
+    async function loadGalleryImages() {
+    const { data, error } = await supabase
+      .from("gallery_images")
+      .select("id, image_url, storage_path")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    setGalleryImages(data || []);
+  }
+
+  async function handleGalleryUpload(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
-    const file = event.target.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
 
     if (!file) {
+      return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setMessage("Please choose a JPG, PNG, or WebP image.");
+      input.value = "";
       return;
     }
 
     setUploadingGalleryImage(true);
     setMessage("");
 
+    let storagePath = "";
+
     try {
       const fileExtension =
-        file.name.split(".").pop() || "jpg";
+        file.name.split(".").pop()?.toLowerCase() || "jpg";
 
-      const storagePath =
-        `gallery/${crypto.randomUUID()}.${fileExtension}`;
+      storagePath = `gallery/${crypto.randomUUID()}.${fileExtension}`;
 
       const { error: uploadError } = await supabase.storage
         .from("gallery")
         .upload(storagePath, file, {
           cacheControl: "3600",
+          contentType: file.type,
           upsert: false,
         });
 
@@ -373,47 +401,36 @@ export default function AdminSettingsPage() {
         throw uploadError;
       }
 
-      const { data: publicUrlData } =
-        supabase.storage
-          .from("gallery")
-          .getPublicUrl(storagePath);
+      const { data: publicUrlData } = supabase.storage
+        .from("gallery")
+        .getPublicUrl(storagePath);
 
       const imageUrl = publicUrlData.publicUrl;
 
-      const { data: insertedImage, error: insertError } =
-        await supabase
-          .from("gallery_images")
-          .insert({
-            image_url: imageUrl,
-            storage_path: storagePath,
-          })
-          .select("id, image_url, storage_path")
-          .single();
+      const { error: insertError } = await supabase
+        .from("gallery_images")
+        .insert({
+          image_url: imageUrl,
+          storage_path: storagePath,
+        });
 
       if (insertError) {
-        await supabase.storage
-          .from("gallery")
-          .remove([storagePath]);
-
+        await supabase.storage.from("gallery").remove([storagePath]);
         throw insertError;
       }
 
-      setGalleryImages((current) => [
-        ...current,
-        insertedImage,
-      ]);
-
+      await loadGalleryImages();
       setMessage("Gallery image added successfully.");
-      event.target.value = "";
     } catch (error) {
-      console.error(error);
+      console.error("Gallery upload failed:", error);
 
       setMessage(
         error instanceof Error
-          ? error.message
+          ? `Gallery upload failed: ${error.message}`
           : "Unable to upload gallery image."
       );
     } finally {
+      input.value = "";
       setUploadingGalleryImage(false);
     }
   }
@@ -898,19 +915,23 @@ export default function AdminSettingsPage() {
             </label>
 
             <div className="mt-6">
-              <label className="inline-flex cursor-pointer items-center rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">
-                {uploadingGalleryImage
-                  ? "Uploading..."
-                  : "Add Picture"}
+              <input
+                ref={galleryFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploadingGalleryImage}
+                onChange={handleGalleryUpload}
+                className="hidden"
+              />
 
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  disabled={uploadingGalleryImage}
-                  onChange={handleGalleryUpload}
-                  className="sr-only"
-                />
-              </label>
+              <button
+                type="button"
+                disabled={uploadingGalleryImage}
+                onClick={() => galleryFileInputRef.current?.click()}
+                className="inline-flex items-center rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {uploadingGalleryImage ? "Uploading..." : "Add Picture"}
+              </button>
 
               <p className="mt-2 text-xs text-slate-500">
                 Accepted formats: JPG, PNG, and WebP.
