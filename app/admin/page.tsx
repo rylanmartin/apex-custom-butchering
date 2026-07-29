@@ -17,6 +17,7 @@ type DashboardStats = {
 };
 
 const supabase = createClient();
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function CalendarIcon() {
   return (
@@ -61,6 +62,15 @@ function getString(record: AppointmentRecord, keys: string[]) {
   return "";
 }
 
+function parseAppointmentDate(raw: string) {
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    return new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function getAppointmentDate(record: AppointmentRecord) {
   const raw = getString(record, [
     "appointment_date",
@@ -70,19 +80,11 @@ function getAppointmentDate(record: AppointmentRecord) {
     "processing_date",
     "created_at",
   ]);
-  if (!raw) return null;
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return raw ? parseAppointmentDate(raw) : null;
 }
 
 function getAppointmentName(record: AppointmentRecord) {
-  const direct = getString(record, [
-    "customer_name",
-    "name",
-    "full_name",
-    "farmer_name",
-    "contact_name",
-  ]);
+  const direct = getString(record, ["customer_name", "name", "full_name", "farmer_name", "contact_name"]);
   if (direct) return direct;
   const first = getString(record, ["first_name", "firstName"]);
   const last = getString(record, ["last_name", "lastName"]);
@@ -90,13 +92,7 @@ function getAppointmentName(record: AppointmentRecord) {
 }
 
 function getAppointmentAnimal(record: AppointmentRecord) {
-  return getString(record, [
-    "animal_type",
-    "species",
-    "animal",
-    "livestock_type",
-    "processing_type",
-  ]) || "Processing appointment";
+  return getString(record, ["animal_type", "species", "animal", "livestock_type", "processing_type"]) || "Processing appointment";
 }
 
 function getAppointmentStatus(record: AppointmentRecord) {
@@ -105,7 +101,7 @@ function getAppointmentStatus(record: AppointmentRecord) {
 
 function formatDate(date: Date | null) {
   if (!date) return "Date not listed";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(date);
 }
 
 function formatTime(record: AppointmentRecord, date: Date | null) {
@@ -113,8 +109,7 @@ function formatTime(record: AppointmentRecord, date: Date | null) {
   if (rawTime) return rawTime;
   if (!date) return "";
   const hasTime = date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0;
-  if (!hasTime) return "";
-  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+  return hasTime ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date) : "";
 }
 
 function statusClasses(status: string) {
@@ -125,13 +120,73 @@ function statusClasses(status: string) {
   return "bg-blue-100 text-blue-800";
 }
 
+function animalClasses(animal: string) {
+  const normalized = animal.toLowerCase();
+  if (normalized.includes("beef") || normalized.includes("cow") || normalized.includes("cattle")) return "border-red-300 bg-red-50 text-red-950 hover:bg-red-100";
+  if (normalized.includes("pork") || normalized.includes("pig") || normalized.includes("hog")) return "border-blue-300 bg-blue-50 text-blue-950 hover:bg-blue-100";
+  if (normalized.includes("sheep") || normalized.includes("lamb")) return "border-emerald-300 bg-emerald-50 text-emerald-950 hover:bg-emerald-100";
+  if (normalized.includes("goat")) return "border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100";
+  return "border-stone-300 bg-stone-50 text-stone-950 hover:bg-stone-100";
+}
+
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function buildCalendarDays(month: Date) {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const gridStart = new Date(first);
+  gridStart.setDate(first.getDate() - first.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const day = new Date(gridStart);
+    day.setDate(gridStart.getDate() + index);
+    return day;
+  });
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [authChecking, setAuthChecking] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRecord | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  async function loadAppointments() {
+    setLoading(true);
+    setLoadError("");
+
+    const result = await supabase
+      .from("appointments")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (result.error) {
+      console.error("Unable to load appointments:", result.error);
+      setLoadError("The dashboard loaded, but appointments could not be retrieved.");
+      setAppointments([]);
+    } else {
+      setAppointments((result.data ?? []) as AppointmentRecord[]);
+    }
+
+    setLoading(false);
+  }
 
   useEffect(() => {
     let active = true;
@@ -145,24 +200,7 @@ export default function AdminDashboardPage() {
       }
 
       setAuthChecking(false);
-
-      const result = await supabase
-        .from("appointments")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (!active) return;
-
-      if (result.error) {
-        console.error("Unable to load appointments:", result.error);
-        setLoadError("The dashboard loaded, but appointments could not be retrieved.");
-        setAppointments([]);
-      } else {
-        setAppointments((result.data ?? []) as AppointmentRecord[]);
-      }
-
-      setLoading(false);
+      await loadAppointments();
     }
 
     loadDashboard();
@@ -170,14 +208,6 @@ export default function AdminDashboardPage() {
       active = false;
     };
   }, [router]);
-
-  const sortedAppointments = useMemo(() => {
-    return [...appointments].sort((a, b) => {
-      const aDate = getAppointmentDate(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-      const bDate = getAppointmentDate(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-      return aDate - bDate;
-    });
-  }, [appointments]);
 
   const stats = useMemo<DashboardStats>(() => {
     const now = new Date();
@@ -201,11 +231,63 @@ export default function AdminDashboardPage() {
     return { total: appointments.length, today, upcoming, completed };
   }, [appointments]);
 
+  const calendarDays = useMemo(() => buildCalendarDays(calendarMonth), [calendarMonth]);
+
+  const appointmentsByDay = useMemo(() => {
+    const grouped = new Map<string, AppointmentRecord[]>();
+    for (const appointment of appointments) {
+      const date = getAppointmentDate(appointment);
+      if (!date) continue;
+      const key = dateKey(date);
+      const current = grouped.get(key) ?? [];
+      current.push(appointment);
+      grouped.set(key, current);
+    }
+
+    for (const [, dayAppointments] of grouped) {
+      dayAppointments.sort((a, b) => {
+        const aTime = getAppointmentDate(a)?.getTime() ?? 0;
+        const bTime = getAppointmentDate(b)?.getTime() ?? 0;
+        return aTime - bTime;
+      });
+    }
+
+    return grouped;
+  }, [appointments]);
+
   async function handleSignOut() {
     setSigningOut(true);
     await supabase.auth.signOut();
     router.replace("/login");
     router.refresh();
+  }
+
+  async function handleDeleteBooking() {
+    if (!selectedAppointment?.id || deleting) return;
+
+    const name = getAppointmentName(selectedAppointment);
+    const confirmed = window.confirm(`Delete the booking for ${name}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setActionMessage("");
+
+    const { error } = await supabase
+      .from("appointments")
+      .delete()
+      .eq("id", selectedAppointment.id);
+
+    if (error) {
+      console.error("Unable to delete appointment:", error);
+      setActionMessage(`Could not delete the booking: ${error.message}`);
+      setDeleting(false);
+      return;
+    }
+
+    setAppointments((current) => current.filter((appointment) => String(appointment.id) !== String(selectedAppointment.id)));
+    setSelectedAppointment(null);
+    setActionMessage("Booking deleted successfully.");
+    setDeleting(false);
   }
 
   if (authChecking) {
@@ -240,9 +322,9 @@ export default function AdminDashboardPage() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-6 py-10 sm:px-8 lg:px-12">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8 lg:px-12">
         <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {[['Total Loaded', stats.total], ['Today', stats.today], ['Upcoming', stats.upcoming], ['Completed', stats.completed]].map(([label, value]) => (
+          {[["Total Loaded", stats.total], ["Today", stats.today], ["Upcoming", stats.upcoming], ["Completed", stats.completed]].map(([label, value]) => (
             <article key={String(label)} className="rounded-lg border border-stone-200 bg-white p-6 shadow-sm">
               <p className="text-sm font-bold uppercase tracking-[0.18em] text-stone-500">{label}</p>
               <p className="mt-3 text-4xl font-black">{value}</p>
@@ -270,13 +352,35 @@ export default function AdminDashboardPage() {
           </Link>
         </section>
 
+        {actionMessage ? (
+          <div className={`mt-8 rounded-md border px-5 py-4 font-semibold ${actionMessage.startsWith("Could not") ? "border-red-300 bg-red-50 text-red-900" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`}>
+            {actionMessage}
+          </div>
+        ) : null}
+
         <section className="mt-8 overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-stone-200 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 border-b border-stone-200 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-red-800">Scheduling</p>
-              <h2 className="mt-1 text-2xl font-black uppercase tracking-tight">Appointments</h2>
+              <h2 className="mt-1 text-2xl font-black uppercase tracking-tight">
+                {new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(calendarMonth)}
+              </h2>
             </div>
-            <button type="button" onClick={() => window.location.reload()} className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold transition hover:border-stone-900">Refresh</button>
+
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold transition hover:border-stone-900">
+                Previous
+              </button>
+              <button type="button" onClick={() => { const now = new Date(); setCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1)); }} className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold transition hover:border-stone-900">
+                Today
+              </button>
+              <button type="button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold transition hover:border-stone-900">
+                Next
+              </button>
+              <button type="button" onClick={loadAppointments} disabled={loading} className="rounded-md bg-stone-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800 disabled:opacity-60">
+                {loading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
           </div>
 
           {loadError ? (
@@ -291,44 +395,131 @@ export default function AdminDashboardPage() {
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-stone-200 border-t-red-800" />
               <p className="mt-4 font-semibold text-stone-600">Loading appointments...</p>
             </div>
-          ) : sortedAppointments.length === 0 ? (
-            <div className="px-6 py-14 text-center">
-              <p className="text-lg font-bold">No appointments found.</p>
-              <p className="mt-2 text-stone-600">New bookings will appear here after they are submitted.</p>
-            </div>
           ) : (
-            <div className="divide-y divide-stone-200">
-              {sortedAppointments.map((appointment, index) => {
-                const appointmentId = appointment.id !== undefined ? String(appointment.id) : String(index);
-                const date = getAppointmentDate(appointment);
-                const time = formatTime(appointment, date);
-                const name = getAppointmentName(appointment);
-                const animal = getAppointmentAnimal(appointment);
-                const status = getAppointmentStatus(appointment);
+            <div className="overflow-x-auto">
+              <div className="min-w-[900px]">
+                <div className="grid grid-cols-7 border-b border-stone-200 bg-stone-50">
+                  {WEEKDAYS.map((weekday) => (
+                    <div key={weekday} className="px-3 py-3 text-center text-xs font-black uppercase tracking-[0.16em] text-stone-500">
+                      {weekday}
+                    </div>
+                  ))}
+                </div>
 
-                return (
-                  <article key={appointmentId} className="grid gap-4 px-6 py-5 transition hover:bg-stone-50 md:grid-cols-[1.2fr_1fr_auto] md:items-center">
-                    <div>
-                      <h3 className="text-lg font-black">{name}</h3>
-                      <p className="mt-1 text-stone-600">{animal}</p>
-                    </div>
-                    <div>
-                      <p className="font-bold">{formatDate(date)}</p>
-                      {time ? <p className="mt-1 text-sm text-stone-600">{time}</p> : null}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 md:justify-end">
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] ${statusClasses(status)}`}>{status}</span>
-                      {appointment.id !== undefined ? (
-                        <Link href={`/admin/${appointmentId}`} className="rounded-md bg-stone-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-800">Open</Link>
-                      ) : null}
-                    </div>
-                  </article>
-                );
-              })}
+                <div className="grid grid-cols-7">
+                  {calendarDays.map((day) => {
+                    const dayAppointments = appointmentsByDay.get(dateKey(day)) ?? [];
+                    const inCurrentMonth = day.getMonth() === calendarMonth.getMonth();
+                    const isToday = sameDay(day, new Date());
+
+                    return (
+                      <div key={dateKey(day)} className={`min-h-36 border-b border-r border-stone-200 p-2 ${inCurrentMonth ? "bg-white" : "bg-stone-50"}`}>
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className={`flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-black ${isToday ? "bg-red-800 text-white" : inCurrentMonth ? "text-stone-900" : "text-stone-400"}`}>
+                            {day.getDate()}
+                          </span>
+                          {dayAppointments.length > 0 ? <span className="text-xs font-bold text-stone-400">{dayAppointments.length}</span> : null}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {dayAppointments.map((appointment, index) => {
+                            const name = getAppointmentName(appointment);
+                            const animal = getAppointmentAnimal(appointment);
+                            const appointmentDate = getAppointmentDate(appointment);
+                            const time = formatTime(appointment, appointmentDate);
+                            const appointmentKey = appointment.id !== undefined ? String(appointment.id) : `${dateKey(day)}-${index}`;
+
+                            return (
+                              <button
+                                key={appointmentKey}
+                                type="button"
+                                onClick={() => setSelectedAppointment(appointment)}
+                                className={`block w-full rounded-md border px-2 py-2 text-left text-xs font-semibold transition ${animalClasses(animal)}`}
+                              >
+                                <span className="block truncate font-black">{name}</span>
+                                <span className="mt-0.5 block truncate opacity-80">{animal}{time ? ` · ${time}` : ""}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </section>
       </div>
+
+      {selectedAppointment ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 p-4" role="dialog" aria-modal="true" aria-label="Booking details">
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-stone-200 px-6 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-red-800">Booking Details</p>
+                <h2 className="mt-1 text-2xl font-black">{getAppointmentName(selectedAppointment)}</h2>
+              </div>
+              <button type="button" onClick={() => setSelectedAppointment(null)} className="rounded-md px-3 py-2 text-xl font-black text-stone-500 transition hover:bg-stone-100 hover:text-stone-950" aria-label="Close booking details">
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-5 px-6 py-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Animal</p>
+                  <p className="mt-1 font-bold">{getAppointmentAnimal(selectedAppointment)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Status</p>
+                  <span className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] ${statusClasses(getAppointmentStatus(selectedAppointment))}`}>
+                    {getAppointmentStatus(selectedAppointment)}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Date</p>
+                  <p className="mt-1 font-bold">{formatDate(getAppointmentDate(selectedAppointment))}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Time</p>
+                  <p className="mt-1 font-bold">{formatTime(selectedAppointment, getAppointmentDate(selectedAppointment)) || "Not listed"}</p>
+                </div>
+              </div>
+
+              {getString(selectedAppointment, ["phone", "phone_number", "customer_phone"]) ? (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Phone</p>
+                  <p className="mt-1 font-bold">{getString(selectedAppointment, ["phone", "phone_number", "customer_phone"])}</p>
+                </div>
+              ) : null}
+
+              {getString(selectedAppointment, ["email", "customer_email"]) ? (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Email</p>
+                  <p className="mt-1 break-all font-bold">{getString(selectedAppointment, ["email", "customer_email"])}</p>
+                </div>
+              ) : null}
+
+              {getString(selectedAppointment, ["notes", "customer_notes", "special_instructions", "comments"]) ? (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Notes</p>
+                  <p className="mt-1 whitespace-pre-wrap text-stone-700">{getString(selectedAppointment, ["notes", "customer_notes", "special_instructions", "comments"])}</p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col-reverse gap-3 border-t border-stone-200 px-6 py-5 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setSelectedAppointment(null)} className="rounded-md border border-stone-300 px-5 py-3 text-sm font-bold transition hover:border-stone-950">
+                Close
+              </button>
+              <button type="button" onClick={handleDeleteBooking} disabled={deleting || selectedAppointment.id === undefined} className="rounded-md bg-red-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+                {deleting ? "Deleting..." : "Delete Booking"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
