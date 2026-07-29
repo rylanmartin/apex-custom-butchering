@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -85,6 +86,8 @@ export default function SchedulePage() {
 
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const submitLockRef = useRef(false);
 
   const currentStep = !animalType
     ? 1
@@ -145,6 +148,8 @@ export default function SchedulePage() {
       createBookingForm(nextAnimalType)
     );
     setMessage("");
+    setSubmitted(false);
+    submitLockRef.current = false;
   };
 
   function getRemainingCapacity(
@@ -237,6 +242,11 @@ export default function SchedulePage() {
   }
 
   async function handleSubmit() {
+    if (saving || submitted || submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
     setSaving(true);
     setMessage("Checking weekly capacity...");
 
@@ -248,6 +258,7 @@ export default function SchedulePage() {
 
     if (validationMessage) {
       setMessage(validationMessage);
+      submitLockRef.current = false;
       setSaving(false);
       return;
     }
@@ -397,9 +408,11 @@ export default function SchedulePage() {
       setMessage(
         "Appointment scheduled successfully."
       );
+      setSubmitted(true);
 
       await loadCapacity(dropoffDate);
     } catch (error) {
+      submitLockRef.current = false;
       console.error(error);
 
       setMessage(
@@ -694,6 +707,7 @@ export default function SchedulePage() {
                   type="button"
                   disabled={
                     saving ||
+                    submitted ||
                     capacityLoading ||
                     Boolean(capacityError)
                   }
@@ -702,7 +716,9 @@ export default function SchedulePage() {
                 >
                   {saving
                     ? "Saving Appointment..."
-                    : "Schedule Appointment"}
+                    : submitted
+                      ? "Appointment Scheduled"
+                      : "Schedule Appointment"}
                 </button>
               </section>
             </>

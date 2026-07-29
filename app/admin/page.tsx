@@ -62,6 +62,12 @@ function getString(record: AppointmentRecord, keys: string[]) {
   return "";
 }
 
+function getStringList(record: AppointmentRecord, key: string) {
+  const value = record[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+}
+
 function parseAppointmentDate(raw: string) {
   const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (dateOnly) {
@@ -84,8 +90,10 @@ function getAppointmentDate(record: AppointmentRecord) {
 }
 
 function getAppointmentName(record: AppointmentRecord) {
-  const direct = getString(record, ["customer_name", "name", "full_name", "farmer_name", "contact_name"]);
+  const direct = getString(record, ["customer_name", "producer_name", "name", "full_name", "farmer_name", "contact_name"]);
   if (direct) return direct;
+  const owners = getStringList(record, "owner_names");
+  if (owners.length > 0) return owners.join(", ");
   const first = getString(record, ["first_name", "firstName"]);
   const last = getString(record, ["last_name", "lastName"]);
   return `${first} ${last}`.trim() || "Customer";
@@ -181,9 +189,103 @@ export default function AdminDashboardPage() {
       console.error("Unable to load appointments:", result.error);
       setLoadError("The dashboard loaded, but appointments could not be retrieved.");
       setAppointments([]);
-    } else {
-      setAppointments((result.data ?? []) as AppointmentRecord[]);
+      setLoading(false);
+      return;
     }
+
+    const appointmentRows = (result.data ?? []) as AppointmentRecord[];
+    const appointmentIds = appointmentRows
+      .map((row) => row.id)
+      .filter((id): id is string | number => id !== undefined);
+    const producerIds = appointmentRows
+      .map((row) => row.customer_id)
+      .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
+
+    const [producerResult, animalResult] = await Promise.all([
+      producerIds.length > 0
+        ? supabase.from("customers").select("id, name, phone, email").in("id", producerIds)
+        : Promise.resolve({ data: [], error: null }),
+      appointmentIds.length > 0
+        ? supabase.from("animals").select("id, appointment_id, animal_number").in("appointment_id", appointmentIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (producerResult.error) console.error("Unable to load producers:", producerResult.error);
+    if (animalResult.error) console.error("Unable to load animals:", animalResult.error);
+
+    const animals = (animalResult.data ?? []) as Array<Record<string, unknown>>;
+    const animalIds = animals
+      .map((animal) => animal.id)
+      .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
+
+    const cutSheetResult = animalIds.length > 0
+      ? await supabase.from("cut_sheets").select("animal_id, customer_id, form_data").in("animal_id", animalIds)
+      : { data: [], error: null };
+
+    if (cutSheetResult.error) console.error("Unable to load beef owners:", cutSheetResult.error);
+
+    const cutSheets = (cutSheetResult.data ?? []) as Array<Record<string, unknown>>;
+    const ownerIds = cutSheets
+      .map((sheet) => sheet.customer_id)
+      .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
+
+    const ownerResult = ownerIds.length > 0
+      ? await supabase.from("customers").select("id, name, phone, email").in("id", ownerIds)
+      : { data: [], error: null };
+
+    if (ownerResult.error) console.error("Unable to load owner names:", ownerResult.error);
+
+    const producersById = new Map<string, Record<string, unknown>>();
+    for (const producer of (producerResult.data ?? []) as Array<Record<string, unknown>>) {
+      producersById.set(String(producer.id), producer);
+    }
+
+    const ownersById = new Map<string, Record<string, unknown>>();
+    for (const owner of (ownerResult.data ?? []) as Array<Record<string, unknown>>) {
+      ownersById.set(String(owner.id), owner);
+    }
+
+    const animalToAppointment = new Map<string, string>();
+    for (const animal of animals) {
+      if (animal.id !== undefined && animal.appointment_id !== undefined) {
+        animalToAppointment.set(String(animal.id), String(animal.appointment_id));
+      }
+    }
+
+    const ownersByAppointment = new Map<string, string[]>();
+    for (const sheet of cutSheets) {
+      const appointmentId = animalToAppointment.get(String(sheet.animal_id));
+      if (!appointmentId) continue;
+
+      const owner = ownersById.get(String(sheet.customer_id));
+      const formData = sheet.form_data && typeof sheet.form_data === "object"
+        ? sheet.form_data as Record<string, unknown>
+        : {};
+      const ownerName =
+        (typeof owner?.name === "string" && owner.name.trim())
+          ? owner.name.trim()
+          : typeof formData.customer_name === "string"
+            ? formData.customer_name.trim()
+            : "";
+
+      if (!ownerName) continue;
+      const current = ownersByAppointment.get(appointmentId) ?? [];
+      if (!current.includes(ownerName)) current.push(ownerName);
+      ownersByAppointment.set(appointmentId, current);
+    }
+
+    const enrichedAppointments = appointmentRows.map((appointment) => {
+      const producer = producersById.get(String(appointment.customer_id));
+      return {
+        ...appointment,
+        customer_name: typeof producer?.name === "string" ? producer.name : "",
+        phone: typeof producer?.phone === "string" ? producer.phone : "",
+        email: typeof producer?.email === "string" ? producer.email : "",
+        owner_names: ownersByAppointment.get(String(appointment.id)) ?? [],
+      };
+    });
+
+    setAppointments(enrichedAppointments);
 
     setLoading(false);
   }
@@ -486,6 +588,22 @@ export default function AdminDashboardPage() {
                   <p className="mt-1 font-bold">{formatTime(selectedAppointment, getAppointmentDate(selectedAppointment)) || "Not listed"}</p>
                 </div>
               </div>
+
+              {getStringList(selectedAppointment, "owner_names").length > 0 ? (
+                <div className="rounded-lg bg-red-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">Beef Owner{getStringList(selectedAppointment, "owner_names").length === 1 ? "" : "s"}</p>
+                  <div className="mt-2 space-y-1">
+                    {getStringList(selectedAppointment, "owner_names").map((ownerName) => (
+                      <p key={ownerName} className="font-black text-stone-950">{ownerName}</p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-amber-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-800">Beef Owner</p>
+                  <p className="mt-1 font-bold text-amber-950">No customer share name was found for this booking.</p>
+                </div>
+              )}
 
               {getString(selectedAppointment, ["phone", "phone_number", "customer_phone"]) ? (
                 <div>
