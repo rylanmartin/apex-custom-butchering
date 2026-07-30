@@ -28,6 +28,19 @@ type GalleryImage = {
   storage_path: string | null;
 };
 
+type PricingItem = {
+  id: string;
+  item: string;
+  price: string;
+};
+
+type PublicCutSheet = {
+  id: string;
+  title: string;
+  file_url: string;
+  storage_path: string | null;
+};
+
 const defaultTimes = [
   "7:00 AM",
   "7:15 AM",
@@ -94,6 +107,12 @@ export default function AdminSettingsPage() {
     useState(false);
 
   const galleryFileInputRef = useRef<HTMLInputElement>(null);
+  const cutSheetFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [pricingItems, setPricingItems] = useState<PricingItem[]>([]);
+  const [cutSheets, setCutSheets] = useState<PublicCutSheet[]>([]);
+  const [newCutSheetTitle, setNewCutSheetTitle] = useState("");
+  const [uploadingCutSheet, setUploadingCutSheet] = useState(false);
 
   const sortedClosedDates = useMemo(
     () => [...closedDates].sort(),
@@ -182,11 +201,24 @@ export default function AdminSettingsPage() {
         }
 
         if (row.setting_key === "gallery_title") {
-          const value = row.setting_value as {
-            title?: string;
-          };
-
+          const value = row.setting_value as { title?: string };
           setGalleryTitle(value.title || "Our Gallery");
+        }
+
+        if (row.setting_key === "pricing_items") {
+          setPricingItems(
+            Array.isArray(row.setting_value)
+              ? (row.setting_value as PricingItem[])
+              : []
+          );
+        }
+
+        if (row.setting_key === "public_cut_sheets") {
+          setCutSheets(
+            Array.isArray(row.setting_value)
+              ? (row.setting_value as PublicCutSheet[])
+              : []
+          );
         }
       }
 
@@ -259,6 +291,8 @@ export default function AdminSettingsPage() {
         saveSetting("gallery_title", {
           title: galleryTitle,
         }),
+        saveSetting("pricing_items", pricingItems),
+        saveSetting("public_cut_sheets", cutSheets),
       ]);
 
       setMessage("Settings saved successfully.");
@@ -484,6 +518,147 @@ export default function AdminSettingsPage() {
         error instanceof Error
           ? error.message
           : "Unable to delete gallery image."
+      );
+    }
+  }
+
+  function addPricingItem() {
+    setPricingItems((current) => [
+      ...current,
+      { id: crypto.randomUUID(), item: "", price: "" },
+    ]);
+  }
+
+  function updatePricingItem(
+    id: string,
+    field: "item" | "price",
+    value: string
+  ) {
+    setPricingItems((current) =>
+      current.map((entry) =>
+        entry.id === id ? { ...entry, [field]: value } : entry
+      )
+    );
+  }
+
+  function removePricingItem(id: string) {
+    setPricingItems((current) =>
+      current.filter((entry) => entry.id !== id)
+    );
+  }
+
+  async function saveCutSheets(nextCutSheets: PublicCutSheet[]) {
+    await saveSetting("public_cut_sheets", nextCutSheets);
+    setCutSheets(nextCutSheets);
+  }
+
+  async function handleCutSheetUpload(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      setMessage("Please choose a PDF file.");
+      input.value = "";
+      return;
+    }
+
+    if (!newCutSheetTitle.trim()) {
+      setMessage("Enter a cut sheet title before choosing the PDF.");
+      input.value = "";
+      return;
+    }
+
+    setUploadingCutSheet(true);
+    setMessage("");
+    let storagePath = "";
+
+    try {
+      const safeName = file.name
+        .toLowerCase()
+        .replace(/[^a-z0-9.]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+      storagePath = `cut-sheets/${crypto.randomUUID()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("documents")
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          contentType: "application/pdf",
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("documents")
+        .getPublicUrl(storagePath);
+
+      const nextCutSheets = [
+        ...cutSheets,
+        {
+          id: crypto.randomUUID(),
+          title: newCutSheetTitle.trim(),
+          file_url: publicUrlData.publicUrl,
+          storage_path: storagePath,
+        },
+      ];
+
+      await saveCutSheets(nextCutSheets);
+      setNewCutSheetTitle("");
+      setMessage("Cut sheet PDF uploaded successfully.");
+    } catch (error) {
+      if (storagePath) {
+        await supabase.storage.from("documents").remove([storagePath]);
+      }
+
+      console.error(error);
+      setMessage(
+        error instanceof Error
+          ? `Cut sheet upload failed: ${error.message}`
+          : "Unable to upload the cut sheet PDF."
+      );
+    } finally {
+      input.value = "";
+      setUploadingCutSheet(false);
+    }
+  }
+
+  async function handleDeleteCutSheet(sheet: PublicCutSheet) {
+    const confirmed = window.confirm(
+      `Delete ${sheet.title}? This removes it from the website.`
+    );
+
+    if (!confirmed) return;
+
+    setMessage("");
+
+    try {
+      const nextCutSheets = cutSheets.filter(
+        (current) => current.id !== sheet.id
+      );
+
+      await saveCutSheets(nextCutSheets);
+
+      if (sheet.storage_path) {
+        const { error } = await supabase.storage
+          .from("documents")
+          .remove([sheet.storage_path]);
+
+        if (error) console.error(error);
+      }
+
+      setMessage("Cut sheet deleted.");
+    } catch (error) {
+      console.error(error);
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete the cut sheet."
       );
     }
   }
@@ -887,14 +1062,132 @@ export default function AdminSettingsPage() {
             )}
           </section>
                     <section className="rounded-2xl bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Homepage Pricing</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Add as many products or services as needed. Enter the full price text exactly as customers should see it.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={addPricingItem}
+                className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                Add Pricing Item
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-3">
+              {pricingItems.map((entry) => (
+                <div key={entry.id} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_280px_auto] md:items-end">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-700">Item or Service</span>
+                    <input
+                      type="text"
+                      value={entry.item}
+                      onChange={(event) => updatePricingItem(entry.id, "item", event.target.value)}
+                      placeholder="Example: Beef processing"
+                      className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-700">Price</span>
+                    <input
+                      type="text"
+                      value={entry.price}
+                      onChange={(event) => updatePricingItem(entry.id, "price", event.target.value)}
+                      placeholder="Example: $0.95/lb"
+                      className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => removePricingItem(entry.id)}
+                    className="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {pricingItems.length === 0 ? (
+              <div className="mt-6 rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+                No pricing items have been added.
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-2xl bg-white p-6 shadow-sm">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Homepage Cut Sheet PDFs</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Add a title, upload a PDF, and it will immediately appear in the Cut Sheets section on the homepage.
+              </p>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">Cut Sheet Title</span>
+                <input
+                  type="text"
+                  value={newCutSheetTitle}
+                  onChange={(event) => setNewCutSheetTitle(event.target.value)}
+                  placeholder="Example: Beef Cut Sheet"
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
+                />
+              </label>
+
+              <div>
+                <input
+                  ref={cutSheetFileInputRef}
+                  type="file"
+                  accept="application/pdf"
+                  disabled={uploadingCutSheet}
+                  onChange={handleCutSheetUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  disabled={uploadingCutSheet}
+                  onClick={() => cutSheetFileInputRef.current?.click()}
+                  className="rounded-lg bg-red-800 px-5 py-3 font-semibold text-white transition hover:bg-red-900 disabled:opacity-60"
+                >
+                  {uploadingCutSheet ? "Uploading PDF..." : "Choose PDF"}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-3">
+              {cutSheets.map((sheet) => (
+                <div key={sheet.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-bold text-slate-900">{sheet.title}</p>
+                    <a href={sheet.file_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-semibold text-red-700 underline">
+                      Open PDF
+                    </a>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCutSheet(sheet)}
+                    className="rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    Delete PDF
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl bg-white p-6 shadow-sm">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-900">
                 Homepage Gallery
               </h2>
 
               <p className="mt-1 text-sm text-slate-600">
-                Edit the gallery title and manage the pictures shown
-                on the homepage.
+                Edit the gallery title and manage every picture. The homepage shows only the first three; the Full Gallery page shows all of them.
               </p>
             </div>
 
