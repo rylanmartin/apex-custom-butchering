@@ -28,11 +28,51 @@ type GalleryImage = {
   storage_path: string | null;
 };
 
+type PricingCategory = "beef" | "pork" | "goat-sheep" | "deer";
+
 type PricingItem = {
   id: string;
   item: string;
   price: string;
+  category: PricingCategory;
 };
+
+const pricingSections: Array<{ id: PricingCategory; label: string }> = [
+  { id: "beef", label: "Beef" },
+  { id: "pork", label: "Pork" },
+  { id: "goat-sheep", label: "Goat & Sheep" },
+  { id: "deer", label: "Deer" },
+];
+
+function inferPricingCategory(item: string): PricingCategory {
+  const normalized = item.toLowerCase();
+  if (normalized.includes("pork") || normalized.includes("pig") || normalized.includes("hog")) return "pork";
+  if (normalized.includes("goat") || normalized.includes("sheep") || normalized.includes("lamb")) return "goat-sheep";
+  if (normalized.includes("deer") || normalized.includes("venison")) return "deer";
+  return "beef";
+}
+
+function normalizePricingItems(value: unknown): PricingItem[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.map((entry, index) => {
+    const record = entry && typeof entry === "object"
+      ? entry as Record<string, unknown>
+      : {};
+    const item = typeof record.item === "string" ? record.item : "";
+    const savedCategory = record.category;
+    const category = savedCategory === "beef" || savedCategory === "pork" || savedCategory === "goat-sheep" || savedCategory === "deer"
+      ? savedCategory
+      : inferPricingCategory(item);
+
+    return {
+      id: typeof record.id === "string" && record.id ? record.id : `pricing-${index}`,
+      item,
+      price: typeof record.price === "string" ? record.price : "",
+      category,
+    };
+  });
+}
 
 type PublicCutSheet = {
   id: string;
@@ -206,11 +246,7 @@ export default function AdminSettingsPage() {
         }
 
         if (row.setting_key === "pricing_items") {
-          setPricingItems(
-            Array.isArray(row.setting_value)
-              ? (row.setting_value as PricingItem[])
-              : []
-          );
+          setPricingItems(normalizePricingItems(row.setting_value));
         }
 
         if (row.setting_key === "public_cut_sheets") {
@@ -522,10 +558,10 @@ export default function AdminSettingsPage() {
     }
   }
 
-  function addPricingItem() {
+  function addPricingItem(category: PricingCategory) {
     setPricingItems((current) => [
       ...current,
-      { id: crypto.randomUUID(), item: "", price: "" },
+      { id: crypto.randomUUID(), item: "", price: "", category },
     ]);
   }
 
@@ -1061,62 +1097,74 @@ export default function AdminSettingsPage() {
               </div>
             )}
           </section>
-                    <section className="rounded-2xl bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Homepage Pricing</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Add as many products or services as needed. Enter the full price text exactly as customers should see it.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={addPricingItem}
-                className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-              >
-                Add Pricing Item
-              </button>
+          <section className="rounded-2xl bg-white p-6 shadow-sm">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Pricing Page</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Add as many prices as needed inside each animal section. Customers will open the separate Pricing page to view them.
+              </p>
             </div>
 
-            <div className="mt-6 space-y-3">
-              {pricingItems.map((entry) => (
-                <div key={entry.id} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_280px_auto] md:items-end">
-                  <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">Item or Service</span>
-                    <input
-                      type="text"
-                      value={entry.item}
-                      onChange={(event) => updatePricingItem(entry.id, "item", event.target.value)}
-                      placeholder="Example: Beef processing"
-                      className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">Price</span>
-                    <input
-                      type="text"
-                      value={entry.price}
-                      onChange={(event) => updatePricingItem(entry.id, "price", event.target.value)}
-                      placeholder="Example: $0.95/lb"
-                      className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => removePricingItem(entry.id)}
-                    className="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ))}
-            </div>
+            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+              {pricingSections.map((section) => {
+                const sectionItems = pricingItems.filter((entry) => entry.category === section.id);
 
-            {pricingItems.length === 0 ? (
-              <div className="mt-6 rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
-                No pricing items have been added.
-              </div>
-            ) : null}
+                return (
+                  <div key={section.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                    <div className="flex flex-col gap-3 bg-slate-900 px-5 py-4 text-white sm:flex-row sm:items-center sm:justify-between">
+                      <h3 className="text-lg font-bold">{section.label} Pricing</h3>
+                      <button
+                        type="button"
+                        onClick={() => addPricingItem(section.id)}
+                        className="rounded-lg bg-red-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                      >
+                        Add {section.label} Item
+                      </button>
+                    </div>
+
+                    <div className="space-y-3 p-4">
+                      {sectionItems.map((entry) => (
+                        <div key={entry.id} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_180px_auto] md:items-end">
+                          <label className="block">
+                            <span className="text-sm font-semibold text-slate-700">Item or Service</span>
+                            <input
+                              type="text"
+                              value={entry.item}
+                              onChange={(event) => updatePricingItem(entry.id, "item", event.target.value)}
+                              placeholder={`Example: ${section.label} processing`}
+                              className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="text-sm font-semibold text-slate-700">Price</span>
+                            <input
+                              type="text"
+                              value={entry.price}
+                              onChange={(event) => updatePricingItem(entry.id, "price", event.target.value)}
+                              placeholder="Example: $0.95/lb"
+                              className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removePricingItem(entry.id)}
+                            className="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+
+                      {sectionItems.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+                          No {section.label.toLowerCase()} pricing items have been added.
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </section>
 
           <section className="rounded-2xl bg-white p-6 shadow-sm">

@@ -6,7 +6,6 @@ import { supabase } from "../supabase";
 
 type ShopInformation = { name: string; phone: string; address: string };
 type GalleryImage = { id: string; image_url: string };
-type PricingItem = { id: string; item: string; price: string };
 type PublicCutSheet = { id: string; title: string; file_url: string; storage_path?: string | null };
 
 const DEFAULT_SHOP_INFORMATION: ShopInformation = {
@@ -48,7 +47,6 @@ export default function HomePage() {
   const [shopInformation, setShopInformation] = useState(DEFAULT_SHOP_INFORMATION);
   const [galleryTitle, setGalleryTitle] = useState("Our Gallery");
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
-  const [pricingItems, setPricingItems] = useState<PricingItem[]>([]);
   const [cutSheets, setCutSheets] = useState<PublicCutSheet[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -60,7 +58,6 @@ export default function HomePage() {
         supabase.from("shop_settings").select("setting_key, setting_value").in("setting_key", [
           "shop_information",
           "gallery_title",
-          "pricing_items",
           "public_cut_sheets",
         ]),
         supabase.from("gallery_images").select("id, image_url").order("created_at", { ascending: true }),
@@ -81,9 +78,6 @@ export default function HomePage() {
           if (row.setting_key === "gallery_title") {
             const value = row.setting_value as { title?: string };
             setGalleryTitle(value.title?.trim() || "Our Gallery");
-          }
-          if (row.setting_key === "pricing_items" && Array.isArray(row.setting_value)) {
-            setPricingItems(row.setting_value as PricingItem[]);
           }
           if (row.setting_key === "public_cut_sheets" && Array.isArray(row.setting_value)) {
             setCutSheets(row.setting_value as PublicCutSheet[]);
@@ -112,7 +106,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4 sm:px-8 lg:px-12">
           <Link href="/" className="font-black uppercase tracking-[0.16em]">Apex Custom Butchering</Link>
           <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-bold uppercase tracking-[0.08em]">
-            <a href="#pricing" className="transition hover:text-red-400">Pricing</a>
+            <Link href="/pricing" className="transition hover:text-red-400">Pricing</Link>
             <a href="#gallery" className="transition hover:text-red-400">Gallery</a>
             <a href="#cut-sheets" className="transition hover:text-red-400">Cut Sheets</a>
             <Link href="/schedule" className="rounded-md bg-red-800 px-4 py-2 transition hover:bg-red-700">Schedule</Link>
@@ -142,16 +136,14 @@ export default function HomePage() {
             <h2 className="mt-4 text-4xl font-black uppercase tracking-tight sm:text-5xl">Pricing</h2>
             <div className="mx-auto mt-6 h-1 w-16 bg-red-800" />
           </div>
-          {loading ? <div className="mt-12 h-40 animate-pulse rounded-lg bg-stone-200" /> : pricingItems.length ? (
-            <div className="mt-12 overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
-              {pricingItems.map((entry, index) => (
-                <div key={entry.id} className={`flex flex-col gap-2 px-6 py-5 sm:flex-row sm:items-center sm:justify-between ${index ? "border-t border-stone-200" : ""}`}>
-                  <span className="font-bold">{entry.item}</span>
-                  <span className="text-lg font-black text-red-800">{entry.price}</span>
-                </div>
-              ))}
-            </div>
-          ) : <p className="mt-12 text-center text-stone-600">Pricing will be posted here soon.</p>}
+          <p className="mx-auto mt-8 max-w-2xl text-center text-lg leading-8 text-stone-600">
+            View our current Beef, Pork, Goat &amp; Sheep, and Deer processing prices.
+          </p>
+          <div className="mt-10 text-center">
+            <Link href="/pricing" className="inline-flex min-h-14 items-center justify-center rounded-md bg-red-800 px-8 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white transition hover:bg-red-700">
+              View All Pricing
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -208,7 +200,7 @@ export default function HomePage() {
         <div className="mx-auto grid max-w-7xl gap-8 px-6 sm:px-8 md:grid-cols-3 lg:px-12">
           <img src="/apex-logo-gray.png" alt={`${shopInformation.name} logo`} className="h-auto w-44 opacity-85" />
           <div><h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">Contact</h2><a href={phoneHref} className="mt-4 block hover:text-white">{shopInformation.phone}</a><p className="mt-2">{shopInformation.address}</p></div>
-          <div><h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">Quick Links</h2><div className="mt-4 flex flex-col gap-2"><a href="#pricing">Pricing</a><Link href="/gallery">Full Gallery</Link><a href="#cut-sheets">Cut Sheets</a></div></div>
+          <div><h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">Quick Links</h2><div className="mt-4 flex flex-col gap-2"><Link href="/pricing">Pricing</Link><Link href="/gallery">Full Gallery</Link><a href="#cut-sheets">Cut Sheets</a></div></div>
         </div>
         <div className="mx-auto mt-10 max-w-7xl border-t border-white/10 px-6 pt-6 text-sm text-stone-500 sm:px-8 lg:px-12">© {new Date().getFullYear()} {shopInformation.name}. All rights reserved.</div>
       </footer>
