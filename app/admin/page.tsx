@@ -104,7 +104,7 @@ function getAppointmentAnimal(record: AppointmentRecord) {
 }
 
 function getAppointmentStatus(record: AppointmentRecord) {
-  return getString(record, ["status", "appointment_status", "processing_status"]) || "scheduled";
+  return getString(record, ["animal_status", "status", "appointment_status", "processing_status"]) || "scheduled";
 }
 
 function formatDate(date: Date | null) {
@@ -170,6 +170,10 @@ export default function AdminDashboardPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRecord | null>(null);
+  const [hangingWeight, setHangingWeight] = useState("");
+  const [savingWeight, setSavingWeight] = useState(false);
+  const [unlockingCutSheet, setUnlockingCutSheet] = useState<"copy" | "no-copy" | null>(null);
+  const [pickupAction, setPickupAction] = useState<"copy" | "no-copy" | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -206,7 +210,7 @@ export default function AdminDashboardPage() {
         ? supabase.from("customers").select("id, name, phone, email").in("id", producerIds)
         : Promise.resolve({ data: [], error: null }),
       appointmentIds.length > 0
-        ? supabase.from("animals").select("id, appointment_id, animal_number").in("appointment_id", appointmentIds)
+        ? supabase.from("animals").select("id, appointment_id, animal_number, hanging_weight, status").in("appointment_id", appointmentIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -219,7 +223,7 @@ export default function AdminDashboardPage() {
       .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
 
     const cutSheetResult = animalIds.length > 0
-      ? await supabase.from("cut_sheets").select("animal_id, customer_id, form_data").in("animal_id", animalIds)
+      ? await supabase.from("cut_sheets").select("id, animal_id, customer_id, form_data, secure_token, unlocked, contact_method").in("animal_id", animalIds)
       : { data: [], error: null };
 
     if (cutSheetResult.error) console.error("Unable to load beef owners:", cutSheetResult.error);
@@ -274,14 +278,43 @@ export default function AdminDashboardPage() {
       ownersByAppointment.set(appointmentId, current);
     }
 
+    const primaryAnimalByAppointment = new Map<string, Record<string, unknown>>();
+    for (const animal of animals) {
+      const appointmentId = String(animal.appointment_id ?? "");
+      if (!appointmentId || primaryAnimalByAppointment.has(appointmentId)) continue;
+      primaryAnimalByAppointment.set(appointmentId, animal);
+    }
+
+    const cutSheetByAppointment = new Map<string, Record<string, unknown>>();
+    for (const sheet of cutSheets) {
+      const appointmentId = animalToAppointment.get(String(sheet.animal_id));
+      if (!appointmentId || cutSheetByAppointment.has(appointmentId)) continue;
+      cutSheetByAppointment.set(appointmentId, sheet);
+    }
+
     const enrichedAppointments = appointmentRows.map((appointment) => {
       const producer = producersById.get(String(appointment.customer_id));
+      const primaryAnimal = primaryAnimalByAppointment.get(String(appointment.id));
+      const cutSheet = cutSheetByAppointment.get(String(appointment.id));
+      const cutSheetCustomer = ownersById.get(String(cutSheet?.customer_id ?? ""));
+
       return {
         ...appointment,
         customer_name: typeof producer?.name === "string" ? producer.name : "",
         phone: typeof producer?.phone === "string" ? producer.phone : "",
         email: typeof producer?.email === "string" ? producer.email : "",
         owner_names: ownersByAppointment.get(String(appointment.id)) ?? [],
+        animal_id: primaryAnimal?.id,
+        hanging_weight: primaryAnimal?.hanging_weight ?? "",
+        animal_status: primaryAnimal?.status ?? "",
+        cut_sheet_id: cutSheet?.id,
+        cut_sheet_token: cutSheet?.secure_token ?? "",
+        cut_sheet_unlocked: Boolean(cutSheet?.unlocked),
+        cut_sheet_contact_method: cutSheet?.contact_method ?? "",
+        cut_sheet_customer_id: cutSheet?.customer_id ?? appointment.customer_id,
+        cut_sheet_customer_name: typeof cutSheetCustomer?.name === "string" ? cutSheetCustomer.name : "",
+        cut_sheet_customer_phone: typeof cutSheetCustomer?.phone === "string" ? cutSheetCustomer.phone : "",
+        cut_sheet_customer_email: typeof cutSheetCustomer?.email === "string" ? cutSheetCustomer.email : "",
       };
     });
 
@@ -356,6 +389,291 @@ export default function AdminDashboardPage() {
 
     return grouped;
   }, [appointments]);
+
+  function openAppointment(appointment: AppointmentRecord) {
+    setSelectedAppointment(appointment);
+    const currentWeight = appointment.hanging_weight;
+    setHangingWeight(
+      typeof currentWeight === "number" || typeof currentWeight === "string"
+        ? String(currentWeight)
+        : ""
+    );
+    setActionMessage("");
+  }
+
+  async function saveHangingWeight() {
+    if (!selectedAppointment?.animal_id || savingWeight) return;
+
+    const numericWeight = Number.parseFloat(hangingWeight);
+    if (!hangingWeight.trim() || Number.isNaN(numericWeight) || numericWeight <= 0) {
+      setActionMessage("Enter a valid hanging weight greater than zero.");
+      return;
+    }
+
+    setSavingWeight(true);
+    setActionMessage("");
+
+    const { error } = await supabase
+      .from("animals")
+      .update({
+        hanging_weight: numericWeight,
+        status: selectedAppointment.cut_sheet_unlocked
+          ? "waiting_on_cut_sheet"
+          : "weight_entered",
+      })
+      .eq("id", selectedAppointment.animal_id);
+
+    if (error) {
+      console.error("Unable to save hanging weight:", error);
+      setActionMessage(`Could not save the hanging weight: ${error.message}`);
+      setSavingWeight(false);
+      return;
+    }
+
+    const updatedAppointment = {
+      ...selectedAppointment,
+      hanging_weight: numericWeight,
+      animal_status: selectedAppointment.cut_sheet_unlocked
+        ? "waiting_on_cut_sheet"
+        : "weight_entered",
+    };
+
+    setSelectedAppointment(updatedAppointment);
+    setAppointments((current) =>
+      current.map((appointment) =>
+        String(appointment.id) === String(selectedAppointment.id)
+          ? updatedAppointment
+          : appointment
+      )
+    );
+    setActionMessage("Hanging weight saved.");
+    setSavingWeight(false);
+  }
+
+  function getCutSheetLink(appointment: AppointmentRecord) {
+    const token = String(appointment.cut_sheet_token || "");
+    if (!token) return "";
+    return typeof window === "undefined"
+      ? `/cut-sheet/${token}`
+      : `${window.location.origin}/cut-sheet/${token}`;
+  }
+
+  function getMessageCustomerName(appointment: AppointmentRecord) {
+    return (
+      getString(appointment, ["cut_sheet_customer_name"]) ||
+      getStringList(appointment, "owner_names")[0] ||
+      getAppointmentName(appointment)
+    );
+  }
+
+  function getMessageCustomerPhone(appointment: AppointmentRecord) {
+    return getString(appointment, [
+      "cut_sheet_customer_phone",
+      "phone",
+      "phone_number",
+      "customer_phone",
+    ]);
+  }
+
+  async function copyToClipboard(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = value;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textArea);
+      return copied;
+    }
+  }
+
+  function buildCutSheetMessage(appointment: AppointmentRecord, numericWeight: number) {
+    const customerName = getMessageCustomerName(appointment);
+    return (
+      `Hello ${customerName}, your hanging weight is ${numericWeight} lbs. ` +
+      `Your cut sheet is ready. Please complete it here: ${getCutSheetLink(appointment)}`
+    );
+  }
+
+  async function copyCutSheetMessage() {
+    if (!selectedAppointment) return;
+
+    const numericWeight = Number.parseFloat(hangingWeight);
+    if (!hangingWeight.trim() || Number.isNaN(numericWeight) || numericWeight <= 0) {
+      setActionMessage("Save a valid hanging weight before copying the cut-sheet message.");
+      return;
+    }
+
+    if (!getCutSheetLink(selectedAppointment)) {
+      setActionMessage("Could not copy the message because this cut sheet has no private link.");
+      return;
+    }
+
+    const copied = await copyToClipboard(buildCutSheetMessage(selectedAppointment, numericWeight));
+    const phone = getMessageCustomerPhone(selectedAppointment);
+    setActionMessage(
+      copied
+        ? `Cut-sheet message copied. Paste it into Messages${phone ? ` for ${phone}` : ""} and send it.`
+        : "Could not copy the cut-sheet message. Select and copy it manually."
+    );
+  }
+
+  async function unlockCutSheet(copyMessage: boolean) {
+    if (!selectedAppointment?.cut_sheet_id || unlockingCutSheet) return;
+
+    const numericWeight = Number.parseFloat(hangingWeight);
+    if (!hangingWeight.trim() || Number.isNaN(numericWeight) || numericWeight <= 0) {
+      setActionMessage("Save a valid hanging weight before unlocking the cut sheet.");
+      return;
+    }
+
+    const mode = copyMessage ? "copy" : "no-copy";
+    setUnlockingCutSheet(mode);
+    setActionMessage("");
+
+    const contactMethod = copyMessage ? "text" : "call";
+    const { error: cutSheetError } = await supabase
+      .from("cut_sheets")
+      .update({
+        unlocked: true,
+        contact_method: contactMethod,
+      })
+      .eq("id", selectedAppointment.cut_sheet_id);
+
+    if (cutSheetError) {
+      console.error("Unable to unlock cut sheet:", cutSheetError);
+      setActionMessage(`Could not unlock the cut sheet: ${cutSheetError.message}`);
+      setUnlockingCutSheet(null);
+      return;
+    }
+
+    const { error: animalError } = await supabase
+      .from("animals")
+      .update({
+        hanging_weight: numericWeight,
+        status: "waiting_on_cut_sheet",
+      })
+      .eq("id", selectedAppointment.animal_id);
+
+    if (animalError) {
+      console.error("Unable to update animal status:", animalError);
+    }
+
+    const updatedAppointment = {
+      ...selectedAppointment,
+      hanging_weight: numericWeight,
+      animal_status: "waiting_on_cut_sheet",
+      cut_sheet_unlocked: true,
+      cut_sheet_contact_method: contactMethod,
+    };
+
+    setSelectedAppointment(updatedAppointment);
+    setAppointments((current) =>
+      current.map((appointment) =>
+        String(appointment.id) === String(selectedAppointment.id)
+          ? updatedAppointment
+          : appointment
+      )
+    );
+
+    if (copyMessage) {
+      const copied = await copyToClipboard(buildCutSheetMessage(updatedAppointment, numericWeight));
+      const phone = getMessageCustomerPhone(updatedAppointment);
+      setActionMessage(
+        copied
+          ? `Cut sheet unlocked and message copied. Paste it into Messages${phone ? ` for ${phone}` : ""} and send it.`
+          : "Cut sheet unlocked, but the message could not be copied. Use Copy Cut Sheet Message to try again."
+      );
+    } else {
+      setActionMessage("Cut sheet unlocked without copying a message.");
+    }
+    setUnlockingCutSheet(null);
+  }
+
+
+  async function markReadyForPickup(copyMessage: boolean) {
+    if (!selectedAppointment?.animal_id || pickupAction) return;
+
+    const mode = copyMessage ? "copy" : "no-copy";
+    setPickupAction(mode);
+    setActionMessage("");
+
+    const { error: animalError } = await supabase
+      .from("animals")
+      .update({ status: "ready_for_pickup" })
+      .eq("id", selectedAppointment.animal_id);
+
+    if (animalError) {
+      console.error("Unable to mark animal ready for pickup:", animalError);
+      setActionMessage(`Could not mark the animal ready for pickup: ${animalError.message}`);
+      setPickupAction(null);
+      return;
+    }
+
+    let copiedPickupMessage = false;
+
+    if (copyMessage) {
+      const customerName = getMessageCustomerName(selectedAppointment);
+
+      const defaultMessage =
+        `Hello ${customerName}, your animal is processed and ready for pickup at ` +
+        `Apex Custom Butchering. Please give us two days to get your meat completely ` +
+        `frozen. If you could bring coolers or boxes to put your meat in, that would ` +
+        `be great. We are looking forward to seeing you soon!`;
+
+      let textMessage = defaultMessage;
+
+      const { data: settingsData, error: settingsError } = await supabase
+        .from("shop_settings")
+        .select("key, value")
+        .in("key", ["ready_for_pickup_message", "pickup_message", "pickup_text_message"]);
+
+      if (!settingsError && Array.isArray(settingsData)) {
+        const savedSetting = settingsData.find((item) => {
+          const value = item?.value;
+          return typeof value === "string" && Boolean(value.trim());
+        });
+
+        if (savedSetting && typeof savedSetting.value === "string") {
+          textMessage = savedSetting.value
+            .replaceAll("[Customer Name]", customerName)
+            .replaceAll("{{customer_name}}", customerName);
+        }
+      }
+
+      copiedPickupMessage = await copyToClipboard(textMessage);
+    }
+
+    const updatedAppointment = {
+      ...selectedAppointment,
+      animal_status: "ready_for_pickup",
+    };
+
+    setSelectedAppointment(updatedAppointment);
+    setAppointments((current) =>
+      current.map((appointment) =>
+        String(appointment.id) === String(selectedAppointment.id)
+          ? updatedAppointment
+          : appointment
+      )
+    );
+
+    const phone = getMessageCustomerPhone(updatedAppointment);
+    setActionMessage(
+      copyMessage
+        ? copiedPickupMessage
+          ? `Animal marked ready for pickup and message copied. Paste it into Messages${phone ? ` for ${phone}` : ""} and send it.`
+          : "Animal marked ready for pickup, but the message could not be copied."
+        : "Animal marked ready for pickup without copying a message."
+    );
+    setPickupAction(null);
+  }
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -535,7 +853,7 @@ export default function AdminDashboardPage() {
                               <button
                                 key={appointmentKey}
                                 type="button"
-                                onClick={() => setSelectedAppointment(appointment)}
+                                onClick={() => openAppointment(appointment)}
                                 className={`block w-full rounded-md border px-2 py-2 text-left text-xs font-semibold transition ${animalClasses(animal)}`}
                               >
                                 <span className="block truncate font-black">{name}</span>
@@ -556,7 +874,7 @@ export default function AdminDashboardPage() {
 
       {selectedAppointment ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 p-4" role="dialog" aria-modal="true" aria-label="Booking details">
-          <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-stone-200 px-6 py-5">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-red-800">Booking Details</p>
@@ -605,10 +923,124 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              {getString(selectedAppointment, ["phone", "phone_number", "customer_phone"]) ? (
+              <div className="rounded-lg border border-stone-200 bg-stone-50 p-5">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-stone-600">
+                    Hanging Weight (lbs)
+                  </span>
+                  <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={hangingWeight}
+                      onChange={(event) => setHangingWeight(event.target.value)}
+                      placeholder="Enter hanging weight"
+                      className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-4 py-3 font-bold outline-none focus:border-red-800 focus:ring-2 focus:ring-red-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveHangingWeight}
+                      disabled={savingWeight || selectedAppointment.animal_id === undefined}
+                      className="rounded-md bg-stone-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingWeight ? "Saving..." : "Save Hanging Weight"}
+                    </button>
+                  </div>
+                </label>
+              </div>
+
+              <div className="rounded-lg border border-red-200 bg-red-50 p-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
+                      Customer Cut Sheet
+                    </p>
+                    <p className="mt-1 font-bold text-stone-950">
+                      {selectedAppointment.cut_sheet_unlocked ? "Unlocked" : "Locked"}
+                    </p>
+                  </div>
+                  {selectedAppointment.cut_sheet_token ? (
+                    <a
+                      href={`/cut-sheet/${String(selectedAppointment.cut_sheet_token)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-900 transition hover:bg-red-100"
+                    >
+                      View Cut Sheet Link
+                    </a>
+                  ) : null}
+                </div>
+
+                {selectedAppointment.cut_sheet_id ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => selectedAppointment.cut_sheet_unlocked ? copyCutSheetMessage() : unlockCutSheet(true)}
+                      disabled={Boolean(unlockingCutSheet)}
+                      className="rounded-md bg-red-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {unlockingCutSheet === "copy"
+                        ? "Unlocking..."
+                        : selectedAppointment.cut_sheet_unlocked
+                          ? "Copy Cut Sheet Message"
+                          : "Unlock + Copy Message"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => unlockCutSheet(false)}
+                      disabled={Boolean(unlockingCutSheet) || Boolean(selectedAppointment.cut_sheet_unlocked)}
+                      className="rounded-md border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-stone-950 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {unlockingCutSheet === "no-copy"
+                        ? "Unlocking..."
+                        : selectedAppointment.cut_sheet_unlocked
+                          ? "Already Unlocked"
+                          : "Unlock Without Copying"}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-md bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
+                    No cut sheet is connected to this appointment.
+                  </p>
+                )}
+              </div>
+
+
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Phone</p>
-                  <p className="mt-1 font-bold">{getString(selectedAppointment, ["phone", "phone_number", "customer_phone"])}</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-800">
+                    Ready for Pickup
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-stone-700">
+                    Mark the animal ready and optionally copy the customer message for manual sending.
+                  </p>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => markReadyForPickup(true)}
+                    disabled={Boolean(pickupAction) || selectedAppointment.animal_id === undefined}
+                    className="rounded-md bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {pickupAction === "copy" ? "Saving..." : "Ready for Pickup + Copy Message"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markReadyForPickup(false)}
+                    disabled={Boolean(pickupAction) || selectedAppointment.animal_id === undefined}
+                    className="rounded-md border border-emerald-300 bg-white px-4 py-3 text-sm font-bold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {pickupAction === "no-copy" ? "Saving..." : "Ready for Pickup Without Copying"}
+                  </button>
+                </div>
+              </div>
+
+              {getMessageCustomerPhone(selectedAppointment) ? (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">Message Phone</p>
+                  <p className="mt-1 font-bold">{getMessageCustomerPhone(selectedAppointment)}</p>
                 </div>
               ) : null}
 
