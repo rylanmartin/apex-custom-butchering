@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../supabase";
 
 type ShopInformation = { name: string; phone: string; address: string };
+type ShopLink = { id: string; label: string; url: string };
 type GalleryImage = { id: string; image_url: string };
 type PublicCutSheet = { id: string; title: string; file_url: string; storage_path?: string | null };
 
@@ -16,6 +17,12 @@ const DEFAULT_SHOP_INFORMATION: ShopInformation = {
 
 function normalizePhoneForLink(phone: string) {
   return phone.replace(/[^\d+]/g, "");
+}
+
+function normalizePublicUrl(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return "#";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 function CalendarIcon() {
@@ -45,6 +52,7 @@ function DocumentIcon() {
 
 export default function HomePage() {
   const [shopInformation, setShopInformation] = useState(DEFAULT_SHOP_INFORMATION);
+  const [shopLinks, setShopLinks] = useState<ShopLink[]>([]);
   const [galleryTitle, setGalleryTitle] = useState("Our Gallery");
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [cutSheets, setCutSheets] = useState<PublicCutSheet[]>([]);
@@ -57,6 +65,7 @@ export default function HomePage() {
       const [settingsResult, galleryResult] = await Promise.all([
         supabase.from("shop_settings").select("setting_key, setting_value").in("setting_key", [
           "shop_information",
+          "shop_links",
           "gallery_title",
           "public_cut_sheets",
         ]),
@@ -74,6 +83,9 @@ export default function HomePage() {
               phone: value.phone || DEFAULT_SHOP_INFORMATION.phone,
               address: value.address || DEFAULT_SHOP_INFORMATION.address,
             });
+          }
+          if (row.setting_key === "shop_links" && Array.isArray(row.setting_value)) {
+            setShopLinks(row.setting_value as ShopLink[]);
           }
           if (row.setting_key === "gallery_title") {
             const value = row.setting_value as { title?: string };
@@ -197,9 +209,21 @@ export default function HomePage() {
       </section>
 
       <footer className="bg-stone-950 py-12 text-stone-300">
-        <div className="mx-auto grid max-w-7xl gap-8 px-6 sm:px-8 md:grid-cols-3 lg:px-12">
+        <div className="mx-auto grid max-w-7xl gap-8 px-6 sm:px-8 md:grid-cols-2 lg:grid-cols-4 lg:px-12">
           <img src="/apex-logo-gray.png" alt={`${shopInformation.name} logo`} className="h-auto w-44 opacity-85" />
           <div><h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">Contact</h2><a href={phoneHref} className="mt-4 block hover:text-white">{shopInformation.phone}</a><p className="mt-2">{shopInformation.address}</p></div>
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">Connect</h2>
+            {shopLinks.filter((link) => link.label.trim() && link.url.trim()).length ? (
+              <div className="mt-4 flex flex-col gap-2">
+                {shopLinks.filter((link) => link.label.trim() && link.url.trim()).map((link) => (
+                  <a key={link.id} href={normalizePublicUrl(link.url)} target="_blank" rel="noreferrer" className="hover:text-white">
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            ) : <p className="mt-4 text-sm text-stone-500">More links coming soon.</p>}
+          </div>
           <div><h2 className="text-sm font-bold uppercase tracking-[0.2em] text-white">Quick Links</h2><div className="mt-4 flex flex-col gap-2"><Link href="/pricing">Pricing</Link><Link href="/gallery">Full Gallery</Link><a href="#cut-sheets">Cut Sheets</a></div></div>
         </div>
         <div className="mx-auto mt-10 max-w-7xl border-t border-white/10 px-6 pt-6 text-sm text-stone-500 sm:px-8 lg:px-12">© {new Date().getFullYear()} {shopInformation.name}. All rights reserved.</div>

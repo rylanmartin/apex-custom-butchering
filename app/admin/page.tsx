@@ -45,6 +45,15 @@ function GalleryIcon() {
   );
 }
 
+function CutSheetIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.25 3.75H6.75a1.5 1.5 0 0 0-1.5 1.5v13.5a1.5 1.5 0 0 0 1.5 1.5h10.5a1.5 1.5 0 0 0 1.5-1.5V8.25l-4.5-4.5Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.25 3.75v4.5h4.5M8.25 12h7.5M8.25 15h7.5M8.25 18h4.5" />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
@@ -207,7 +216,7 @@ export default function AdminDashboardPage() {
 
     const [producerResult, animalResult] = await Promise.all([
       producerIds.length > 0
-        ? supabase.from("customers").select("id, name, phone, email").in("id", producerIds)
+        ? supabase.from("customers").select("id, name, phone").in("id", producerIds)
         : Promise.resolve({ data: [], error: null }),
       appointmentIds.length > 0
         ? supabase.from("animals").select("id, appointment_id, animal_number, hanging_weight, status").in("appointment_id", appointmentIds)
@@ -234,7 +243,7 @@ export default function AdminDashboardPage() {
       .filter((id): id is string | number => typeof id === "string" || typeof id === "number");
 
     const ownerResult = ownerIds.length > 0
-      ? await supabase.from("customers").select("id, name, phone, email").in("id", ownerIds)
+      ? await supabase.from("customers").select("id, name, phone").in("id", ownerIds)
       : { data: [], error: null };
 
     if (ownerResult.error) console.error("Unable to load owner names:", ownerResult.error);
@@ -752,7 +761,7 @@ export default function AdminDashboardPage() {
           ))}
         </section>
 
-        <section className="mt-8 grid gap-5 md:grid-cols-3">
+        <section className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           <Link href="/schedule" className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white"><CalendarIcon /></div>
             <h2 className="mt-5 text-xl font-black uppercase tracking-tight">New Appointment</h2>
@@ -769,6 +778,12 @@ export default function AdminDashboardPage() {
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white"><GalleryIcon /></div>
             <h2 className="mt-5 text-xl font-black uppercase tracking-tight">Homepage Gallery</h2>
             <p className="mt-2 leading-7 text-stone-600">Change the gallery title and manage the images shown on the homepage.</p>
+          </Link>
+
+          <Link href="/admin/cut-sheets" className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white"><CutSheetIcon /></div>
+            <h2 className="mt-5 text-xl font-black uppercase tracking-tight">Cut Sheets</h2>
+            <p className="mt-2 leading-7 text-stone-600">Review waiting, submitted, and previously printed customer cut sheets.</p>
           </Link>
         </section>
 

@@ -18,6 +18,12 @@ type ShopInformation = {
   address: string;
 };
 
+type ShopLink = {
+  id: string;
+  label: string;
+  url: string;
+};
+
 type ProcessingDay = {
   day: string;
 };
@@ -122,6 +128,8 @@ export default function AdminSettingsPage() {
       address: "155 W Henderson Rd. Owosso, MI 48867",
     });
 
+  const [shopLinks, setShopLinks] = useState<ShopLink[]>([]);
+
   const [pickupMessage, setPickupMessage] = useState(
     "Hello [Customer Name], your animal is processed and ready for pickup at Apex Custom Butchering. Please give us two days to get your meat completely frozen. If you could bring coolers or boxes to put your meat in, that would be great. We are looking forward to seeing you soon!"
   );
@@ -206,6 +214,14 @@ export default function AdminSettingsPage() {
         if (row.setting_key === "shop_information") {
           setShopInformation(
             row.setting_value as ShopInformation
+          );
+        }
+
+        if (row.setting_key === "shop_links") {
+          setShopLinks(
+            Array.isArray(row.setting_value)
+              ? (row.setting_value as ShopLink[])
+              : []
           );
         }
 
@@ -309,6 +325,7 @@ export default function AdminSettingsPage() {
           "shop_information",
           shopInformation
         ),
+        saveSetting("shop_links", shopLinks),
         saveSetting("pickup_message", {
           message: pickupMessage,
         }),
@@ -366,6 +383,31 @@ export default function AdminSettingsPage() {
       ...current,
       [field]: value,
     }));
+  }
+
+  function addShopLink() {
+    setShopLinks((current) => [
+      ...current,
+      { id: crypto.randomUUID(), label: "", url: "" },
+    ]);
+  }
+
+  function updateShopLink(
+    id: string,
+    field: "label" | "url",
+    value: string
+  ) {
+    setShopLinks((current) =>
+      current.map((link) =>
+        link.id === id ? { ...link, [field]: value } : link
+      )
+    );
+  }
+
+  function removeShopLink(id: string) {
+    setShopLinks((current) =>
+      current.filter((link) => link.id !== id)
+    );
   }
 
   function updateTuesdayTime(
@@ -905,6 +947,64 @@ export default function AdminSettingsPage() {
                   className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-red-700 focus:ring-2 focus:ring-red-100"
                 />
               </label>
+            </div>
+
+            <div className="mt-8 border-t border-slate-200 pt-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="font-bold text-slate-900">Public Links</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Add Instagram, Facebook, or any other link you want customers to see.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addShopLink}
+                  className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Add Link
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {shopLinks.map((link) => (
+                  <div key={link.id} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[240px_1fr_auto] md:items-end">
+                    <label className="block">
+                      <span className="text-sm font-semibold text-slate-700">Link Name</span>
+                      <input
+                        type="text"
+                        value={link.label}
+                        onChange={(event) => updateShopLink(link.id, "label", event.target.value)}
+                        placeholder="Example: Instagram"
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-sm font-semibold text-slate-700">Website Address</span>
+                      <input
+                        type="url"
+                        value={link.url}
+                        onChange={(event) => updateShopLink(link.id, "url", event.target.value)}
+                        placeholder="https://instagram.com/your-page"
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 outline-none focus:border-red-700 focus:ring-2 focus:ring-red-100"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeShopLink(link.id)}
+                      className="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {shopLinks.length === 0 ? (
+                <div className="mt-5 rounded-lg border border-dashed border-slate-300 px-4 py-7 text-center text-sm text-slate-500">
+                  No public links have been added yet.
+                </div>
+              ) : null}
             </div>
           </section>
 
