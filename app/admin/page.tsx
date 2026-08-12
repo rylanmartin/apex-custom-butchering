@@ -9,6 +9,12 @@ type AppointmentRecord = Record<string, unknown> & {
   id?: string | number;
 };
 
+type OwnerContact = {
+  customerId: string;
+  name: string;
+  phone: string;
+};
+
 type DashboardStats = {
   total: number;
   today: number;
@@ -144,6 +150,40 @@ function getStringList(record: AppointmentRecord, key: string) {
   return value.filter(
     (item): item is string => typeof item === "string" && Boolean(item.trim()),
   );
+}
+
+function getOwnerContacts(record: AppointmentRecord) {
+  const value = record.owner_contacts;
+
+  if (Array.isArray(value)) {
+    const contacts = value.flatMap((item): OwnerContact[] => {
+      if (!item || typeof item !== "object") return [];
+
+      const contact = item as Record<string, unknown>;
+      const name = typeof contact.name === "string" ? contact.name.trim() : "";
+      const phone =
+        typeof contact.phone === "string" ? contact.phone.trim() : "";
+      const customerId = String(contact.customerId ?? name);
+
+      return name ? [{ customerId, name, phone }] : [];
+    });
+
+    if (contacts.length > 0) return contacts;
+  }
+
+  const names = getStringList(record, "owner_names");
+  const primaryPhone = getString(record, [
+    "cut_sheet_customer_phone",
+    "phone",
+    "phone_number",
+    "customer_phone",
+  ]);
+
+  return names.map((name, index) => ({
+    customerId: `${name}-${index}`,
+    name,
+    phone: index === 0 ? primaryPhone : "",
+  }));
 }
 
 function parseAppointmentDate(raw: string) {
@@ -341,6 +381,7 @@ export default function AdminDashboardPage() {
     const result = await supabase
       .from("appointments")
       .select("*")
+      .neq("booking_type", "fair")
       .order("created_at", { ascending: false })
       .limit(500);
 
@@ -451,7 +492,7 @@ export default function AdminDashboardPage() {
       }
     }
 
-    const ownersByAppointment = new Map<string, string[]>();
+    const ownerContactsByAppointment = new Map<string, OwnerContact[]>();
     for (const sheet of cutSheets) {
       const appointmentId = animalToAppointment.get(String(sheet.animal_id));
       if (!appointmentId) continue;
@@ -468,10 +509,31 @@ export default function AdminDashboardPage() {
             ? formData.customer_name.trim()
             : "";
 
+      const ownerPhone =
+        typeof owner?.phone === "string" && owner.phone.trim()
+          ? owner.phone.trim()
+          : getString(formData as AppointmentRecord, [
+              "customer_phone",
+              "phone",
+              "phone_number",
+            ]);
+
       if (!ownerName) continue;
-      const current = ownersByAppointment.get(appointmentId) ?? [];
-      if (!current.includes(ownerName)) current.push(ownerName);
-      ownersByAppointment.set(appointmentId, current);
+      const customerId = String(sheet.customer_id ?? sheet.id ?? ownerName);
+      const current = ownerContactsByAppointment.get(appointmentId) ?? [];
+      const existingContact = current.find(
+        (contact) => contact.customerId === customerId,
+      );
+
+      if (existingContact) {
+        if (!existingContact.phone && ownerPhone) {
+          existingContact.phone = ownerPhone;
+        }
+      } else {
+        current.push({ customerId, name: ownerName, phone: ownerPhone });
+      }
+
+      ownerContactsByAppointment.set(appointmentId, current);
     }
 
     const primaryAnimalByAppointment = new Map<
@@ -501,13 +563,16 @@ export default function AdminDashboardPage() {
       const cutSheetCustomer = ownersById.get(
         String(cutSheet?.customer_id ?? ""),
       );
+      const ownerContacts =
+        ownerContactsByAppointment.get(String(appointment.id)) ?? [];
 
       return {
         ...appointment,
         customer_name: typeof producer?.name === "string" ? producer.name : "",
         phone: typeof producer?.phone === "string" ? producer.phone : "",
         email: typeof producer?.email === "string" ? producer.email : "",
-        owner_names: ownersByAppointment.get(String(appointment.id)) ?? [],
+        owner_names: ownerContacts.map((contact) => contact.name),
+        owner_contacts: ownerContacts,
         animal_id: primaryAnimal?.id,
         hanging_weight: primaryAnimal?.hanging_weight ?? "",
         animal_status: primaryAnimal?.status ?? "",
@@ -1124,6 +1189,21 @@ export default function AdminDashboardPage() {
           </Link>
 
           <Link
+            href="/admin/fair-animals"
+            className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white">
+              <CutSheetIcon />
+            </div>
+            <h2 className="mt-5 text-xl font-black uppercase tracking-tight">
+              Fair Animals
+            </h2>
+            <p className="mt-2 leading-7 text-stone-600">
+              Enter a fair customer, choose the animal, and open the cut sheet.
+            </p>
+          </Link>
+
+          <Link
             href="/admin/meat-requests"
             className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md"
           >
@@ -1386,24 +1466,34 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {getStringList(selectedAppointment, "owner_names").length > 0 ? (
+              {getOwnerContacts(selectedAppointment).length > 0 ? (
                 <div className="rounded-lg bg-red-50 p-4">
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
                     Beef Owner
-                    {getStringList(selectedAppointment, "owner_names")
-                      .length === 1
+                    {getOwnerContacts(selectedAppointment).length === 1
                       ? ""
                       : "s"}
                   </p>
-                  <div className="mt-2 space-y-1">
-                    {getStringList(selectedAppointment, "owner_names").map(
-                      (ownerName) => (
-                        <p
-                          key={ownerName}
-                          className="font-black text-stone-950"
-                        >
-                          {ownerName}
-                        </p>
+                  <div className="mt-2 space-y-3">
+                    {getOwnerContacts(selectedAppointment).map(
+                      (ownerContact) => (
+                        <div key={ownerContact.customerId}>
+                          <p className="font-black text-stone-950">
+                            {ownerContact.name}
+                          </p>
+                          {ownerContact.phone ? (
+                            <a
+                              href={`tel:${ownerContact.phone}`}
+                              className="mt-1 inline-block font-bold text-red-800 underline decoration-red-300 underline-offset-4"
+                            >
+                              {ownerContact.phone}
+                            </a>
+                          ) : (
+                            <p className="mt-1 text-sm font-semibold text-stone-500">
+                              No phone number listed
+                            </p>
+                          )}
+                        </div>
                       ),
                     )}
                   </div>
