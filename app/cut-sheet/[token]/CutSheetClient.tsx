@@ -955,7 +955,7 @@ const porkTextFields: TextField[] = [
     width: 93.0,
     height: 13.2,
     multiline: true,
-    fontScale: 0.016,
+    fontScale: 0.050,
   },
   {
     name: "pork_sausage_brats_batches",

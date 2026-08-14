@@ -116,6 +116,25 @@ function CutSheetIcon() {
   );
 }
 
+function CustomersIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      className="h-5 w-5"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M15.75 6.75a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0"
+      />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
     <svg
@@ -1153,6 +1172,21 @@ export default function AdminDashboardPage() {
             <p className="mt-2 leading-7 text-stone-600">
               Change the gallery title and manage the images shown on the
               homepage.
+            </p>
+          </Link>
+
+          <Link
+            href="/admin/customers"
+            className="group rounded-lg border border-stone-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-red-800 hover:shadow-md"
+          >
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-800 text-white">
+              <CustomersIcon />
+            </div>
+            <h2 className="mt-5 text-xl font-black uppercase tracking-tight">
+              Customers
+            </h2>
+            <p className="mt-2 leading-7 text-stone-600">
+              Search customers and review scheduled, fair, deer, and cut-sheet history.
             </p>
           </Link>
 
