@@ -34,8 +34,10 @@ type DeerCutSheet = {
   form_data: FormData | null;
 };
 
+type LivestockSpecies = "beef" | "pork" | "sheep" | "goat";
+
 type QueueItem =
-  | { kind: "beef"; sheet: CutSheet }
+  | { kind: "livestock"; species: LivestockSpecies; sheet: CutSheet }
   | { kind: "deer"; sheet: DeerCutSheet };
 
 type Tab = "waiting" | "submitted" | "printed";
@@ -174,179 +176,6 @@ const textFields: TextField[] = [
     width: 89,
     fontScale: 0.016,
     multiline: true,
-  },
-];
-
-const porkChoiceMarks: ChoiceMark[] = [
-  { name: "pork_hams_cured", left: 11.521, top: 30.723, size: "tiny" },
-  { name: "pork_hams_fresh", left: 11.521, top: 33.523, size: "tiny" },
-  { name: "pork_ham_quarter", left: 15.377, top: 36.107, size: "tiny" },
-  { name: "pork_ham_half", left: 15.377, top: 38.766, size: "tiny" },
-  { name: "pork_ham_whole", left: 15.377, top: 41.425, size: "tiny" },
-  { name: "pork_ham_steaks", left: 15.377, top: 44.084, size: "tiny" },
-  { name: "pork_hocks_cured", left: 47.938, top: 29.932, size: "tiny" },
-  { name: "pork_hocks_fresh", left: 47.938, top: 32.732, size: "tiny" },
-  { name: "pork_jowls_cured", left: 47.938, top: 39.928, size: "tiny" },
-  { name: "pork_jowls_fresh", left: 47.938, top: 42.729, size: "tiny" },
-  { name: "pork_tongue_yes", left: 78.887, top: 30.045, size: "tiny" },
-  { name: "pork_tongue_no", left: 78.887, top: 32.845, size: "tiny" },
-  { name: "pork_liver_yes", left: 78.887, top: 39.994, size: "tiny" },
-  { name: "pork_liver_no", left: 78.887, top: 42.79, size: "tiny" },
-  { name: "pork_ribs_yes", left: 47.938, top: 49.972, size: "tiny" },
-  { name: "pork_ribs_no", left: 47.938, top: 52.767, size: "tiny" },
-  { name: "pork_lard_yes", left: 79.094, top: 50.028, size: "tiny" },
-  { name: "pork_lard_no", left: 79.094, top: 52.833, size: "tiny" },
-  { name: "pork_bacon_cured", left: 11.508, top: 53.323, size: "tiny" },
-  { name: "pork_bacon_fresh", left: 11.508, top: 56.123, size: "tiny" },
-  { name: "pork_bacon_1lb", left: 15.517, top: 58.707, size: "tiny" },
-  { name: "pork_bacon_2lb", left: 15.517, top: 61.361, size: "tiny" },
-  { name: "pork_heart_yes", left: 47.681, top: 60.104, size: "tiny" },
-  { name: "pork_heart_no", left: 47.681, top: 62.905, size: "tiny" },
-  { name: "pork_porkchops_yes", left: 79.094, top: 60.104, size: "tiny" },
-  { name: "pork_porkchops_no", left: 79.094, top: 62.905, size: "tiny" },
-  { name: "pork_loin_yes", left: 47.681, top: 70.181, size: "tiny" },
-  { name: "pork_loin_no", left: 47.681, top: 72.986, size: "tiny" },
-  { name: "pork_loin_roast_yes", left: 79.094, top: 70.181, size: "tiny" },
-  { name: "pork_loin_roast_no", left: 79.094, top: 72.986, size: "tiny" },
-  { name: "pork_shoulder_steak", left: 4.351, top: 71.263, size: "tiny" },
-  { name: "pork_shoulder_roast", left: 4.351, top: 75.428, size: "tiny" },
-  { name: "pork_pulled_pork", left: 4.351, top: 79.688, size: "tiny" },
-  { name: "pork_sausage_links", left: 40.725, top: 77.024, size: "tiny" },
-  { name: "pork_bulk_sausage", left: 40.725, top: 80.845, size: "tiny" },
-  { name: "pork_patties", left: 75.885, top: 77.099, size: "tiny" },
-  { name: "pork_brats", left: 75.885, top: 80.921, size: "tiny" },
-];
-
-const porkTextFields: TextField[] = [
-  {
-    name: "customer_name",
-    left: 49.2,
-    top: 7.1,
-    width: 46.5,
-    fontScale: 0.019,
-  },
-  {
-    name: "phone_number",
-    left: 47.4,
-    top: 11.25,
-    width: 48.3,
-    fontScale: 0.019,
-  },
-  {
-    name: "slaughter_weight",
-    left: 42.25,
-    top: 15.65,
-    width: 21.6,
-    fontScale: 0.016,
-  },
-  {
-    name: "slaughter_date",
-    left: 78.3,
-    top: 15.65,
-    width: 17.4,
-    fontScale: 0.016,
-  },
-  {
-    name: "pork_sausage_links_lbs",
-    left: 61.8,
-    top: 76.35,
-    width: 5,
-    fontScale: 0.016,
-  },
-  {
-    name: "pork_patties_lbs",
-    left: 87.45,
-    top: 76.35,
-    width: 5,
-    fontScale: 0.016,
-  },
-  {
-    name: "pork_bulk_sausage_lbs",
-    left: 61.3,
-    top: 80.15,
-    width: 5,
-    fontScale: 0.016,
-  },
-  {
-    name: "pork_brats_lbs",
-    left: 85.9,
-    top: 80.15,
-    width: 5,
-    fontScale: 0.016,
-  },
-  {
-    name: "notes",
-    left: 3.3,
-    top: 84,
-    width: 93,
-    fontScale: 0.016,
-    multiline: true,
-  },
-];
-
-const porkSausageChoiceMarks: ChoiceMark[] = [
-  { name: "pork_sausage_farmstyle", left: 24.824, top: 27.015, size: "tiny" },
-  {
-    name: "pork_sausage_sweet_italian",
-    left: 27.859,
-    top: 36.746,
-    size: "tiny",
-  },
-  { name: "pork_sausage_italian", left: 19.877, top: 46.127, size: "tiny" },
-  { name: "pork_sausage_regular", left: 21.654, top: 55.727, size: "tiny" },
-  { name: "pork_sausage_hot", left: 15.441, top: 65.458, size: "tiny" },
-  { name: "pork_sausage_maple", left: 18.762, top: 75.136, size: "tiny" },
-];
-
-const porkSausageTextFields: TextField[] = [
-  {
-    name: "pork_sausage_brats_batches",
-    left: 64.08,
-    top: 26.1,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_brats_cheese_batches",
-    left: 64.7,
-    top: 30.93,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_patties_batches",
-    left: 65.48,
-    top: 35.75,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_patties_cheese_batches",
-    left: 64.37,
-    top: 40.59,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_links_batches",
-    left: 64.07,
-    top: 45.41,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_links_cheese_batches",
-    left: 64.42,
-    top: 50.24,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_ground_pork_lbs",
-    left: 75.21,
-    top: 55.08,
-    width: 4.2,
-    fontScale: 0.017,
   },
 ];
 
@@ -514,6 +343,168 @@ const deerTextFields: TextField[] = [
   },
 ];
 
+function yesNoMarks(
+  id: string,
+  yesLeft: number,
+  noLeft: number,
+  top: number,
+  noTop = top,
+): ChoiceMark[] {
+  return [
+    { name: `${id}_yes`, left: yesLeft, top },
+    { name: `${id}_no`, left: noLeft, top: noTop },
+  ];
+}
+
+const sheepChoiceMarks: ChoiceMark[] = [
+  ...yesNoMarks("sheep_shoulder_roast", 38.86, 44.98, 28.05),
+  ...yesNoMarks("sheep_shoulder_steaks", 39.8, 45.9, 30.7),
+  ...yesNoMarks("sheep_stew_meat", 34.06, 40.17, 33.37),
+  ...yesNoMarks("sheep_neck_roast", 35.08, 41.15, 36.02),
+  ...yesNoMarks("sheep_ham_roast", 34.72, 40.8, 42.69),
+  ...yesNoMarks("sheep_ham_steaks", 35.66, 41.76, 45.34),
+  ...yesNoMarks("sheep_inner_loin", 33.55, 39.64, 52.02),
+  ...yesNoMarks("sheep_heart", 29.31, 35.41, 54.68),
+  ...yesNoMarks("sheep_tongue", 30.8, 36.88, 57.33),
+  ...yesNoMarks("sheep_liver", 28.44, 34.55, 59.98),
+  ...yesNoMarks("sheep_kidney", 30.39, 36.49, 62.65),
+  ...yesNoMarks("sheep_lamb_chops", 36.35, 42.45, 69.31),
+  ...yesNoMarks("sheep_ribs", 28.09, 34.19, 71.96),
+  ...yesNoMarks("sheep_leg_of_lamb", 35.04, 41.14, 74.61),
+  ...yesNoMarks("sheep_crown_roast", 36.41, 42.51, 77.28),
+  ...yesNoMarks("sheep_backstrap_whole", 30.13, 36.23, 83.95),
+  ...yesNoMarks("sheep_backstrap_sliced", 29.9, 36, 86.6),
+];
+
+const sheepTextFields: TextField[] = [
+  {
+    name: "customer_name",
+    left: 24.5,
+    top: 16.2,
+    width: 22.5,
+    fontScale: 0.017,
+  },
+  {
+    name: "phone_number",
+    left: 27.1,
+    top: 20.45,
+    width: 22.5,
+    fontScale: 0.017,
+  },
+  { name: "slaughter_date", left: 65, top: 16.2, width: 20, fontScale: 0.017 },
+];
+
+const goatChoiceMarks: ChoiceMark[] = [
+  ...yesNoMarks("goat_neck", 32.69, 41.73, 28.66),
+  ...yesNoMarks("goat_shoulder_roast", 44.87, 53.32, 32.07),
+  ...yesNoMarks("goat_loin", 30.9, 39.36, 35.48),
+  ...yesNoMarks("goat_ribs", 31.02, 40.07, 38.9),
+  ...yesNoMarks("goat_heart", 32.61, 41.07, 42.31),
+  ...yesNoMarks("goat_tongue", 34.54, 42.97, 45.72),
+  ...yesNoMarks("goat_liver", 31.49, 39.95, 49.14),
+  ...yesNoMarks("goat_kidneys", 35.4, 43.85, 52.55),
+  ...yesNoMarks("goat_chops", 33.83, 42.28, 55.97),
+  { name: "goat_hams_steaks", left: 16.18, top: 63.77 },
+  { name: "goat_hams_roast", left: 16.2, top: 68.19 },
+];
+
+const goatTextFields: TextField[] = [
+  { name: "customer_name", left: 26, top: 15.2, width: 20, fontScale: 0.017 },
+  { name: "phone_number", left: 64, top: 15.2, width: 18, fontScale: 0.017 },
+  {
+    name: "slaughter_date",
+    left: 17.5,
+    top: 18.35,
+    width: 19,
+    fontScale: 0.017,
+  },
+  {
+    name: "notes",
+    left: 17.5,
+    top: 73.7,
+    width: 69,
+    multiline: true,
+    fontScale: 0.016,
+  },
+];
+
+const porkChoiceMarks: ChoiceMark[] = [
+  { name: "pork_hams_cured", left: 10.65, top: 30.1 },
+  { name: "pork_hams_fresh", left: 10.65, top: 33.5 },
+  { name: "pork_hams_quarter", left: 14.5, top: 35.4 },
+  { name: "pork_hams_half", left: 14.5, top: 38.1 },
+  { name: "pork_hams_whole", left: 14.5, top: 40.8 },
+  { name: "pork_hams_steaks", left: 14.5, top: 43.4 },
+  { name: "pork_bacon_cured", left: 10.65, top: 52.7 },
+  { name: "pork_bacon_fresh", left: 10.65, top: 55.45 },
+  { name: "pork_bacon_1lb", left: 14.65, top: 58.05 },
+  { name: "pork_bacon_2lb", left: 14.65, top: 60.75 },
+  { name: "pork_shoulder_steak", left: 3.5, top: 70.7 },
+  { name: "pork_shoulder_roast", left: 3.5, top: 75.05 },
+  { name: "pork_shoulder_pulled", left: 3.5, top: 79.05 },
+  { name: "pork_hocks_cured", left: 47.05, top: 29.35 },
+  { name: "pork_hocks_fresh", left: 47.05, top: 32.1 },
+  { name: "pork_jowls_cured", left: 47.05, top: 39.3 },
+  { name: "pork_jowls_fresh", left: 47.05, top: 42.05 },
+  ...yesNoMarks("pork_ribs", 47.05, 47.05, 49.35, 52.1),
+  ...yesNoMarks("pork_heart", 47.05, 47.05, 59.95, 62.7),
+  ...yesNoMarks("pork_loin", 47.05, 47.05, 70.05, 72.8),
+  ...yesNoMarks("pork_tongue", 78.05, 78.05, 29.45, 32.2),
+  ...yesNoMarks("pork_liver", 78.05, 78.05, 39.35, 42.1),
+  ...yesNoMarks("pork_lard", 78.05, 78.05, 49.4, 52.15),
+  ...yesNoMarks("pork_chops", 78.05, 78.05, 59.45, 62.2),
+  ...yesNoMarks("pork_loin_roast", 78.05, 78.05, 70.05, 72.8),
+];
+
+const porkTextFields: TextField[] = [
+  { name: "customer_name", left: 48.8, top: 6.9, width: 46, fontScale: 0.017 },
+  { name: "phone_number", left: 47, top: 11.05, width: 47.5, fontScale: 0.017 },
+  {
+    name: "slaughter_weight",
+    left: 42.5,
+    top: 15.95,
+    width: 18,
+    fontScale: 0.015,
+  },
+  {
+    name: "slaughter_date",
+    left: 78.5,
+    top: 15.95,
+    width: 16,
+    fontScale: 0.015,
+  },
+  {
+    name: "pork_sausage_links_lbs",
+    left: 61.7,
+    top: 76.15,
+    width: 7,
+    fontScale: 0.015,
+  },
+  {
+    name: "pork_patties_lbs",
+    left: 87.3,
+    top: 76.15,
+    width: 7,
+    fontScale: 0.015,
+  },
+  {
+    name: "pork_bulk_sausage_lbs",
+    left: 61.7,
+    top: 80,
+    width: 7,
+    fontScale: 0.015,
+  },
+  { name: "pork_brats_lbs", left: 87.3, top: 80, width: 7, fontScale: 0.015 },
+  {
+    name: "notes",
+    left: 4,
+    top: 84,
+    width: 91,
+    multiline: true,
+    fontScale: 0.015,
+  },
+];
+
 function firstRelation<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
@@ -549,6 +540,31 @@ function getDeerFormData(sheet: DeerCutSheet): FormData {
   };
 }
 
+function normalizeSpecies(
+  value: string | null | undefined,
+): LivestockSpecies | null {
+  const animal = String(value || "").toLowerCase();
+  if (
+    animal.includes("beef") ||
+    animal.includes("cow") ||
+    animal.includes("cattle")
+  )
+    return "beef";
+  if (
+    animal.includes("pork") ||
+    animal.includes("pig") ||
+    animal.includes("hog")
+  )
+    return "pork";
+  if (animal.includes("sheep") || animal.includes("lamb")) return "sheep";
+  if (animal.includes("goat")) return "goat";
+  return null;
+}
+
+function speciesLabel(species: LivestockSpecies) {
+  return species.charAt(0).toUpperCase() + species.slice(1);
+}
+
 function queueCustomerName(item: QueueItem) {
   return item.kind === "deer"
     ? item.sheet.customer_name
@@ -572,6 +588,24 @@ function queueCustomerLink(item: QueueItem) {
   return item.kind === "deer"
     ? `/deer-cut-sheet/${item.sheet.secure_token}`
     : `/cut-sheet/${item.sheet.secure_token}`;
+}
+
+function speciesTemplatePath(species: LivestockSpecies) {
+  return `/images/${species}-cut-sheet.pdf`;
+}
+
+function speciesChoiceMarks(species: LivestockSpecies) {
+  if (species === "pork") return porkChoiceMarks;
+  if (species === "sheep") return sheepChoiceMarks;
+  if (species === "goat") return goatChoiceMarks;
+  return choiceMarks;
+}
+
+function speciesTextFields(species: LivestockSpecies) {
+  if (species === "pork") return porkTextFields;
+  if (species === "sheep") return sheepTextFields;
+  if (species === "goat") return goatTextFields;
+  return textFields;
 }
 
 function customerName(sheet: CutSheet) {
@@ -685,39 +719,41 @@ function drawTextFields(
 }
 
 async function buildCombinedPdf(items: QueueItem[]) {
-  const needsPork = items.some(
-    (item) =>
-      item.kind === "beef" &&
-      String(item.sheet.animal_type || "")
-        .toLowerCase()
-        .includes("pork"),
-  );
-  const needsBeef = items.some((item) => {
-    if (item.kind !== "beef") return false;
-    const animalType = String(item.sheet.animal_type || "").toLowerCase();
-    return !animalType.includes("pork");
-  });
   const needsDeer = items.some((item) => item.kind === "deer");
+  const neededSpecies = Array.from(
+    new Set(
+      items
+        .filter(
+          (item): item is Extract<QueueItem, { kind: "livestock" }> =>
+            item.kind === "livestock",
+        )
+        .map((item) => item.species),
+    ),
+  );
 
-  const [beefResponse, porkResponse, deerResponse] = await Promise.all([
-    needsBeef ? fetch("/images/beef-cut-sheet.pdf") : null,
-    needsPork ? fetch("/images/pork-cut-sheet.pdf") : null,
+  const [speciesResponses, deerResponse] = await Promise.all([
+    Promise.all(
+      neededSpecies.map(async (species) => {
+        const response = await fetch(speciesTemplatePath(species));
+        if (!response.ok) {
+          throw new Error(`The ${species} cut-sheet PDF could not be loaded.`);
+        }
+        return [species, response] as const;
+      }),
+    ),
     needsDeer ? fetch("/images/deer-cut-sheet.pdf") : null,
   ]);
 
-  if (beefResponse && !beefResponse.ok)
-    throw new Error("The beef cut-sheet PDF could not be loaded.");
-  if (porkResponse && !porkResponse.ok)
-    throw new Error("The pork cut-sheet PDF could not be loaded.");
   if (deerResponse && !deerResponse.ok)
     throw new Error("The deer cut-sheet PDF could not be loaded.");
 
-  const beefTemplate = beefResponse
-    ? await PDFDocument.load(await beefResponse.arrayBuffer())
-    : null;
-  const porkTemplate = porkResponse
-    ? await PDFDocument.load(await porkResponse.arrayBuffer())
-    : null;
+  const speciesTemplates = new Map<LivestockSpecies, PDFDocument>();
+  for (const [species, response] of speciesResponses) {
+    speciesTemplates.set(
+      species,
+      await PDFDocument.load(await response.arrayBuffer()),
+    );
+  }
   const deerTemplate = deerResponse
     ? await PDFDocument.load(await deerResponse.arrayBuffer())
     : null;
@@ -753,46 +789,15 @@ async function buildCombinedPdf(items: QueueItem[]) {
       continue;
     }
 
-    const animalType = String(item.sheet.animal_type || "").toLowerCase();
-
-    if (animalType.includes("pork")) {
-      if (!porkTemplate) continue;
-      if (porkTemplate.getPageCount() < 2) {
-        throw new Error(
-          "The pork cut-sheet PDF must contain the cut sheet first and sausage sheet second.",
-        );
-      }
-
-      const [cutPage, sausagePage] = await output.copyPages(
-        porkTemplate,
-        [0, 1],
-      );
-      output.addPage(cutPage);
-      output.addPage(sausagePage);
-      const data = getFormData(item.sheet);
-
-      drawTextFields(cutPage, data, porkTextFields, font);
-      for (const mark of porkChoiceMarks) {
-        if (data[mark.name] === true)
-          drawRedCheck(cutPage, mark.left, mark.top, mark.size);
-      }
-
-      drawTextFields(sausagePage, data, porkSausageTextFields, font);
-      for (const mark of porkSausageChoiceMarks) {
-        if (data[mark.name] === true)
-          drawRedCheck(sausagePage, mark.left, mark.top, mark.size);
-      }
-      continue;
-    }
-
-    if (!beefTemplate) continue;
-    const [page] = await output.copyPages(beefTemplate, [0]);
+    const template = speciesTemplates.get(item.species);
+    if (!template) continue;
+    const [page] = await output.copyPages(template, [0]);
     output.addPage(page);
     const data = getFormData(item.sheet);
 
-    drawTextFields(page, data, textFields, font);
+    drawTextFields(page, data, speciesTextFields(item.species), font);
 
-    for (const mark of choiceMarks) {
+    for (const mark of speciesChoiceMarks(item.species)) {
       if (data[mark.name] === true)
         drawRedCheck(page, mark.left, mark.top, mark.size);
     }
@@ -814,7 +819,7 @@ export default function AdminCutSheetsPage() {
     setLoading(true);
     setMessage("");
 
-    const [beefResult, deerResult] = await Promise.all([
+    const [livestockResult, deerResult] = await Promise.all([
       supabase
         .from("cut_sheets")
         .select(
@@ -839,27 +844,15 @@ export default function AdminCutSheetsPage() {
         .order("created_at", { ascending: false }),
     ]);
 
-    if (beefResult.error) {
-      console.error(beefResult.error);
+    if (livestockResult.error) {
+      console.error(livestockResult.error);
       setMessage(
-        `Could not load livestock cut sheets: ${beefResult.error.message}`,
+        `Could not load livestock cut sheets: ${livestockResult.error.message}`,
       );
       setSheets([]);
     } else {
-      const rows = (beefResult.data ?? []) as unknown as CutSheet[];
-      setSheets(
-        rows.filter((sheet) => {
-          const animal = String(sheet.animal_type || "").toLowerCase();
-          return (
-            animal.includes("beef") ||
-            animal.includes("cow") ||
-            animal.includes("cattle") ||
-            animal.includes("pork") ||
-            animal.includes("pig") ||
-            animal.includes("hog")
-          );
-        }),
-      );
+      const rows = (livestockResult.data ?? []) as unknown as CutSheet[];
+      setSheets(rows.filter((sheet) => normalizeSpecies(sheet.animal_type)));
     }
 
     if (deerResult.error) {
@@ -903,7 +896,10 @@ export default function AdminCutSheetsPage() {
     () => [
       ...sheets
         .filter((sheet) => sheet.unlocked && !sheet.submitted_at)
-        .map((sheet): QueueItem => ({ kind: "beef", sheet })),
+        .flatMap((sheet): QueueItem[] => {
+          const species = normalizeSpecies(sheet.animal_type);
+          return species ? [{ kind: "livestock", species, sheet }] : [];
+        }),
       ...deerSheets
         .filter((sheet) => !sheet.submitted_at)
         .map((sheet): QueueItem => ({ kind: "deer", sheet })),
@@ -914,7 +910,10 @@ export default function AdminCutSheetsPage() {
     () => [
       ...sheets
         .filter((sheet) => Boolean(sheet.submitted_at) && !sheet.printed_at)
-        .map((sheet): QueueItem => ({ kind: "beef", sheet })),
+        .flatMap((sheet): QueueItem[] => {
+          const species = normalizeSpecies(sheet.animal_type);
+          return species ? [{ kind: "livestock", species, sheet }] : [];
+        }),
       ...deerSheets
         .filter((sheet) => Boolean(sheet.submitted_at) && !sheet.printed_at)
         .map((sheet): QueueItem => ({ kind: "deer", sheet })),
@@ -925,7 +924,10 @@ export default function AdminCutSheetsPage() {
     () => [
       ...sheets
         .filter((sheet) => Boolean(sheet.printed_at))
-        .map((sheet): QueueItem => ({ kind: "beef", sheet })),
+        .flatMap((sheet): QueueItem[] => {
+          const species = normalizeSpecies(sheet.animal_type);
+          return species ? [{ kind: "livestock", species, sheet }] : [];
+        }),
       ...deerSheets
         .filter((sheet) => Boolean(sheet.printed_at))
         .map((sheet): QueueItem => ({ kind: "deer", sheet })),
@@ -948,10 +950,10 @@ export default function AdminCutSheetsPage() {
     try {
       const pdfBytes = await buildCombinedPdf(eligible);
       const printedAt = new Date().toISOString();
-      const beefIds = eligible
+      const livestockIds = eligible
         .filter(
-          (item): item is Extract<QueueItem, { kind: "beef" }> =>
-            item.kind === "beef",
+          (item): item is Extract<QueueItem, { kind: "livestock" }> =>
+            item.kind === "livestock",
         )
         .map((item) => item.sheet.id);
       const deerIds = eligible
@@ -961,12 +963,12 @@ export default function AdminCutSheetsPage() {
         )
         .map((item) => item.sheet.id);
 
-      const [beefUpdate, deerUpdate] = await Promise.all([
-        beefIds.length
+      const [livestockUpdate, deerUpdate] = await Promise.all([
+        livestockIds.length
           ? supabase
               .from("cut_sheets")
               .update({ printed_at: printedAt })
-              .in("id", beefIds)
+              .in("id", livestockIds)
               .is("printed_at", null)
           : Promise.resolve({ error: null }),
         deerIds.length
@@ -978,12 +980,12 @@ export default function AdminCutSheetsPage() {
           : Promise.resolve({ error: null }),
       ]);
 
-      if (beefUpdate.error) throw beefUpdate.error;
+      if (livestockUpdate.error) throw livestockUpdate.error;
       if (deerUpdate.error) throw deerUpdate.error;
 
       setSheets((current) =>
         current.map((sheet) =>
-          beefIds.includes(sheet.id)
+          livestockIds.includes(sheet.id)
             ? { ...sheet, printed_at: printedAt }
             : sheet,
         ),
@@ -1143,7 +1145,7 @@ export default function AdminCutSheetsPage() {
             <div className="divide-y divide-stone-200">
               {activeSheets.map((item) => {
                 const animal =
-                  item.kind === "beef" ? getAnimal(item.sheet) : null;
+                  item.kind === "livestock" ? getAnimal(item.sheet) : null;
                 const phone = queuePhone(item);
                 const submittedAt = queueSubmittedAt(item);
                 const printedAt = queuePrintedAt(item);
@@ -1167,7 +1169,7 @@ export default function AdminCutSheetsPage() {
                         >
                           {item.kind === "deer"
                             ? "Deer"
-                            : String(item.sheet.animal_type || "Livestock")}
+                            : speciesLabel(item.species)}
                         </span>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-stone-600">

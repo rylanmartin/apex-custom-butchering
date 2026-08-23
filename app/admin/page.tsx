@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -22,8 +23,55 @@ type DashboardStats = {
   completed: number;
 };
 
+type AdminNotification = {
+  id: string;
+  event_type: string;
+  title: string;
+  message: string;
+  link: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+type AnnualProcessingTotals = {
+  beef: number;
+  pork: number;
+  sheep: number;
+  goat: number;
+  deer: number;
+  cropDamageDeer: number;
+};
+
+const EMPTY_ANNUAL_TOTALS: AnnualProcessingTotals = {
+  beef: 0,
+  pork: 0,
+  sheep: 0,
+  goat: 0,
+  deer: 0,
+  cropDamageDeer: 0,
+};
+
 const supabase = createClient();
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function BellIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      className="h-5 w-5"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75v-.7V9a6 6 0 0 0-12 0v.05-.05.7a8.967 8.967 0 0 1-2.311 6.072c1.75.575 3.57 1.012 5.454 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
+      />
+    </svg>
+  );
+}
 
 function CalendarIcon() {
   return (
@@ -259,6 +307,52 @@ function getAppointmentAnimal(record: AppointmentRecord) {
   );
 }
 
+function normalizeAnnualSpecies(
+  value: unknown,
+):
+  | keyof Pick<AnnualProcessingTotals, "beef" | "pork" | "sheep" | "goat">
+  | null {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (
+    normalized.includes("beef") ||
+    normalized.includes("cow") ||
+    normalized.includes("cattle")
+  ) {
+    return "beef";
+  }
+  if (
+    normalized.includes("pork") ||
+    normalized.includes("pig") ||
+    normalized.includes("hog")
+  ) {
+    return "pork";
+  }
+  if (normalized.includes("sheep") || normalized.includes("lamb")) {
+    return "sheep";
+  }
+  if (normalized.includes("goat")) return "goat";
+
+  return null;
+}
+
+function isProcessedAnimalStatus(value: unknown) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized.includes("ready_for_pickup") ||
+    normalized.includes("ready for pickup") ||
+    normalized.includes("picked_up") ||
+    normalized.includes("picked up") ||
+    normalized.includes("complete") ||
+    normalized.includes("finished") ||
+    normalized.includes("processed")
+  );
+}
+
 function getAppointmentStatus(record: AppointmentRecord) {
   return (
     getString(record, [
@@ -388,10 +482,219 @@ export default function AdminDashboardPage() {
   const [pickupAction, setPickupAction] = useState<"copy" | "no-copy" | null>(
     null,
   );
+  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState("");
+  const [browserReady, setBrowserReady] = useState(false);
+  const [annualTotals, setAnnualTotals] =
+    useState<AnnualProcessingTotals>(EMPTY_ANNUAL_TOTALS);
+  const [annualTotalsOpen, setAnnualTotalsOpen] = useState(false);
+  const [annualTotalsLoading, setAnnualTotalsLoading] = useState(false);
+  const [annualTotalsError, setAnnualTotalsError] = useState("");
+  const [cropDamageAmount, setCropDamageAmount] = useState("");
+  const [addingCropDamage, setAddingCropDamage] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+
+  async function loadNotifications() {
+    setNotificationsLoading(true);
+    setNotificationsError("");
+
+    const result = await supabase
+      .from("admin_notifications")
+      .select("id, event_type, title, message, link, read_at, created_at")
+      .order("created_at", { ascending: false })
+      .limit(40);
+
+    if (result.error) {
+      console.error("Unable to load admin notifications:", result.error);
+      setNotificationsError(
+        result.error.code === "42P01"
+          ? "The notification table has not been set up in Supabase yet."
+          : "Notifications could not be loaded. Refresh and try again.",
+      );
+    } else {
+      setNotifications((result.data ?? []) as AdminNotification[]);
+    }
+
+    setNotificationsLoading(false);
+  }
+
+  async function markNotificationRead(id: string) {
+    const readAt = new Date().toISOString();
+    setNotifications((current) =>
+      current.map((notification) =>
+        notification.id === id
+          ? { ...notification, read_at: notification.read_at || readAt }
+          : notification,
+      ),
+    );
+
+    const { error } = await supabase
+      .from("admin_notifications")
+      .update({ read_at: readAt })
+      .eq("id", id)
+      .is("read_at", null);
+
+    if (error) console.error("Unable to mark notification read:", error);
+  }
+
+  async function markAllNotificationsRead() {
+    const readAt = new Date().toISOString();
+    const unreadIds = notifications
+      .filter((notification) => !notification.read_at)
+      .map((notification) => notification.id);
+
+    if (unreadIds.length === 0) return;
+
+    setNotifications((current) =>
+      current.map((notification) => ({
+        ...notification,
+        read_at: notification.read_at || readAt,
+      })),
+    );
+
+    const { error } = await supabase
+      .from("admin_notifications")
+      .update({ read_at: readAt })
+      .in("id", unreadIds);
+
+    if (error) console.error("Unable to mark notifications read:", error);
+  }
+
+  async function loadAnnualProcessingTotals() {
+    setAnnualTotalsLoading(true);
+    setAnnualTotalsError("");
+
+    const currentYear = new Date().getFullYear();
+    const yearStart = new Date(currentYear, 0, 1).toISOString();
+    const nextYearStart = new Date(currentYear + 1, 0, 1).toISOString();
+
+    const [appointmentResult, animalResult, deerResult, manualResult] =
+      await Promise.all([
+        supabase.from("appointments").select("*").limit(5000),
+        supabase
+          .from("animals")
+          .select("id, appointment_id, status")
+          .limit(10000),
+        supabase
+          .from("deer_cut_sheets")
+          .select("id, created_at")
+          .gte("created_at", yearStart)
+          .lt("created_at", nextYearStart)
+          .limit(10000),
+        supabase
+          .from("annual_manual_animal_counts")
+          .select("count")
+          .eq("year", currentYear)
+          .eq("category", "crop_damage_deer")
+          .maybeSingle(),
+      ]);
+
+    if (appointmentResult.error || animalResult.error) {
+      console.error(
+        "Unable to load annual livestock totals:",
+        appointmentResult.error || animalResult.error,
+      );
+      setAnnualTotalsError(
+        "The yearly livestock totals could not be loaded. Refresh and try again.",
+      );
+    }
+
+    if (deerResult.error) {
+      console.error("Unable to load the annual deer total:", deerResult.error);
+    }
+
+    if (manualResult.error) {
+      console.warn(
+        "Unable to load the crop-damage deer total:",
+        manualResult.error,
+      );
+      setAnnualTotalsError(
+        "Run the annual processing counter SQL in Supabase to enable Crop Damage Deer.",
+      );
+    }
+
+    const appointmentSpecies = new Map<
+      string,
+      keyof Pick<AnnualProcessingTotals, "beef" | "pork" | "sheep" | "goat">
+    >();
+
+    for (const appointment of (appointmentResult.data ??
+      []) as AppointmentRecord[]) {
+      const appointmentDate = getAppointmentDate(appointment);
+      const species = normalizeAnnualSpecies(getAppointmentAnimal(appointment));
+      if (
+        appointment.id !== undefined &&
+        appointmentDate?.getFullYear() === currentYear &&
+        species
+      ) {
+        appointmentSpecies.set(String(appointment.id), species);
+      }
+    }
+
+    const nextTotals: AnnualProcessingTotals = {
+      ...EMPTY_ANNUAL_TOTALS,
+      deer: deerResult.data?.length ?? 0,
+      cropDamageDeer:
+        typeof manualResult.data?.count === "number"
+          ? manualResult.data.count
+          : Number(manualResult.data?.count ?? 0),
+    };
+
+    for (const animal of (animalResult.data ?? []) as Array<
+      Record<string, unknown>
+    >) {
+      if (!isProcessedAnimalStatus(animal.status)) continue;
+      const species = appointmentSpecies.get(String(animal.appointment_id));
+      if (species) nextTotals[species] += 1;
+    }
+
+    setAnnualTotals(nextTotals);
+    setAnnualTotalsLoading(false);
+  }
+
+  async function addCropDamageDeer() {
+    const amount = Number.parseInt(cropDamageAmount, 10);
+    if (!Number.isInteger(amount) || amount <= 0) {
+      setAnnualTotalsError("Enter a whole number greater than zero.");
+      return;
+    }
+
+    setAddingCropDamage(true);
+    setAnnualTotalsError("");
+
+    const { data, error } = await supabase.rpc(
+      "increment_annual_manual_animal_count",
+      {
+        p_year: new Date().getFullYear(),
+        p_category: "crop_damage_deer",
+        p_amount: amount,
+      },
+    );
+
+    if (error) {
+      console.error("Unable to add crop-damage deer:", error);
+      setAnnualTotalsError(
+        "Crop Damage Deer could not be updated. Confirm the annual counter SQL was run in Supabase.",
+      );
+      setAddingCropDamage(false);
+      return;
+    }
+
+    const updatedCount = Number(data ?? annualTotals.cropDamageDeer + amount);
+    setAnnualTotals((current) => ({
+      ...current,
+      cropDamageDeer: Number.isFinite(updatedCount)
+        ? updatedCount
+        : current.cropDamageDeer + amount,
+    }));
+    setCropDamageAmount("");
+    setAddingCropDamage(false);
+  }
 
   async function loadAppointments() {
     setLoading(true);
@@ -635,7 +938,11 @@ export default function AdminDashboardPage() {
       }
 
       setAuthChecking(false);
-      await loadAppointments();
+      await Promise.all([
+        loadAppointments(),
+        loadNotifications(),
+        loadAnnualProcessingTotals(),
+      ]);
     }
 
     loadDashboard();
@@ -643,6 +950,89 @@ export default function AdminDashboardPage() {
       active = false;
     };
   }, [router]);
+
+  useEffect(() => {
+    setBrowserReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (authChecking) return;
+
+    const channel = supabase
+      .channel("admin-notification-feed")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "admin_notifications",
+        },
+        () => {
+          void loadNotifications();
+        },
+      )
+      .subscribe();
+
+    const intervalId = window.setInterval(() => {
+      void loadNotifications();
+      void loadAnnualProcessingTotals();
+    }, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      void supabase.removeChannel(channel);
+    };
+  }, [authChecking]);
+
+  useEffect(() => {
+    if (!selectedAppointment) return;
+
+    const scrollY = window.scrollY;
+    const previousBodyStyles = {
+      position: document.body.style.position,
+      top: document.body.style.top,
+      left: document.body.style.left,
+      right: document.body.style.right,
+      width: document.body.style.width,
+      overflow: document.body.style.overflow,
+    };
+
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setSelectedAppointment(null);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.position = previousBodyStyles.position;
+      document.body.style.top = previousBodyStyles.top;
+      document.body.style.left = previousBodyStyles.left;
+      document.body.style.right = previousBodyStyles.right;
+      document.body.style.width = previousBodyStyles.width;
+      document.body.style.overflow = previousBodyStyles.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [selectedAppointment?.id]);
+
+  const unreadNotificationCount = notifications.filter(
+    (notification) => !notification.read_at,
+  ).length;
+
+  const annualProcessedTotal =
+    annualTotals.beef +
+    annualTotals.pork +
+    annualTotals.sheep +
+    annualTotals.goat +
+    annualTotals.deer +
+    annualTotals.cropDamageDeer;
 
   const stats = useMemo<DashboardStats>(() => {
     const now = new Date();
@@ -1016,6 +1406,7 @@ export default function AdminDashboardPage() {
           : "Animal marked ready for pickup, but the message could not be copied."
         : "Animal marked ready for pickup without copying a message.",
     );
+    await loadAnnualProcessingTotals();
     setPickupAction(null);
   }
 
@@ -1088,6 +1479,113 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setNotificationsOpen((open) => !open)}
+                className="relative inline-flex items-center justify-center gap-2 rounded-md border border-white/25 px-4 py-3 text-sm font-bold transition hover:bg-white hover:text-stone-950"
+                aria-expanded={notificationsOpen}
+                aria-controls="admin-notification-list"
+                aria-label={`Notifications, ${unreadNotificationCount} unread`}
+              >
+                <BellIcon />
+                Notifications
+                {unreadNotificationCount > 0 ? (
+                  <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-red-700 px-1.5 py-0.5 text-xs font-black text-white">
+                    {unreadNotificationCount > 99
+                      ? "99+"
+                      : unreadNotificationCount}
+                  </span>
+                ) : null}
+              </button>
+
+              {notificationsOpen ? (
+                <div
+                  id="admin-notification-list"
+                  className="absolute left-0 z-[80] mt-2 w-[min(92vw,26rem)] overflow-hidden rounded-xl border border-stone-200 bg-white text-stone-950 shadow-2xl sm:left-auto sm:right-0"
+                >
+                  <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
+                    <div>
+                      <p className="font-black uppercase tracking-tight">
+                        Notifications
+                      </p>
+                      <p className="text-xs text-stone-500">
+                        {unreadNotificationCount} unread
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void loadNotifications()}
+                        disabled={notificationsLoading}
+                        className="text-xs font-bold text-stone-600 disabled:text-stone-400"
+                      >
+                        Refresh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void markAllNotificationsRead()}
+                        disabled={unreadNotificationCount === 0}
+                        className="text-xs font-bold text-red-800 disabled:text-stone-400"
+                      >
+                        Mark all read
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    className="max-h-[min(24rem,65dvh)] overflow-y-auto"
+                    style={{ WebkitOverflowScrolling: "touch" }}
+                  >
+                    {notificationsError ? (
+                      <p className="bg-amber-50 px-4 py-5 text-sm font-semibold text-amber-950">
+                        {notificationsError}
+                      </p>
+                    ) : notificationsLoading && notifications.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-sm text-stone-500">
+                        Loading notifications...
+                      </p>
+                    ) : notifications.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-sm text-stone-500">
+                        No notifications yet.
+                      </p>
+                    ) : (
+                      notifications.map((notification) => (
+                        <Link
+                          key={notification.id}
+                          href={notification.link || "/admin"}
+                          onClick={() => {
+                            void markNotificationRead(notification.id);
+                            setNotificationsOpen(false);
+                          }}
+                          className={`block border-b border-stone-100 px-4 py-4 transition hover:bg-stone-50 ${notification.read_at ? "bg-white" : "bg-red-50"}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span
+                              className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${notification.read_at ? "bg-stone-300" : "bg-red-700"}`}
+                            />
+                            <span>
+                              <span className="block text-sm font-black">
+                                {notification.title}
+                              </span>
+                              <span className="mt-1 block text-sm leading-5 text-stone-600">
+                                {notification.message}
+                              </span>
+                              <span className="mt-2 block text-xs font-semibold text-stone-400">
+                                {new Date(
+                                  notification.created_at,
+                                ).toLocaleString()}
+                              </span>
+                            </span>
+                          </div>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <Link
               href="/"
               className="inline-flex items-center justify-center rounded-md border border-white/25 px-4 py-3 text-sm font-bold transition hover:bg-white hover:text-stone-950"
@@ -1108,7 +1606,143 @@ export default function AdminDashboardPage() {
       </header>
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8 lg:px-12">
-        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <section>
+          <button
+            type="button"
+            onClick={() => setAnnualTotalsOpen((open) => !open)}
+            className="flex w-full touch-manipulation items-center justify-between gap-5 rounded-xl border border-red-200 bg-white px-6 py-5 text-left shadow-sm transition hover:border-red-700 hover:shadow-md"
+            aria-expanded={annualTotalsOpen}
+            aria-controls="annual-processing-breakdown"
+          >
+            <span>
+              <span className="block text-xs font-black uppercase tracking-[0.24em] text-red-800">
+                {new Date().getFullYear()} Shop Total
+              </span>
+              <span className="mt-1 block text-xl font-black uppercase tracking-tight text-stone-950">
+                Animals Processed This Year
+              </span>
+              <span className="mt-1 block text-sm font-semibold text-stone-500">
+                Click to view the species breakdown.
+              </span>
+            </span>
+
+            <span className="flex shrink-0 items-center gap-4">
+              <span className="text-4xl font-black text-red-800">
+                {annualTotalsLoading ? "…" : annualProcessedTotal}
+              </span>
+              <span
+                className={`text-2xl font-black transition ${annualTotalsOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              >
+                ⌄
+              </span>
+            </span>
+          </button>
+
+          {annualTotalsOpen ? (
+            <div
+              id="annual-processing-breakdown"
+              className="mt-3 rounded-xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-black uppercase tracking-tight">
+                    {new Date().getFullYear()} Processed Animals
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-stone-500">
+                    Livestock totals update when an animal is marked Ready for
+                    Pickup. Deer are counted from Deer Drop-Off.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadAnnualProcessingTotals()}
+                  disabled={annualTotalsLoading}
+                  className="rounded-md border border-stone-300 px-4 py-2 text-sm font-bold transition hover:border-stone-950 disabled:opacity-50"
+                >
+                  {annualTotalsLoading ? "Refreshing..." : "Refresh Totals"}
+                </button>
+              </div>
+
+              {annualTotalsError ? (
+                <p className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950">
+                  {annualTotalsError}
+                </p>
+              ) : null}
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  ["Beef", annualTotals.beef],
+                  ["Pigs", annualTotals.pork],
+                  ["Sheep", annualTotals.sheep],
+                  ["Goats", annualTotals.goat],
+                  ["Deer", annualTotals.deer],
+                ].map(([label, value]) => (
+                  <article
+                    key={String(label)}
+                    className="rounded-lg border border-stone-200 bg-stone-50 p-4"
+                  >
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-stone-500">
+                      {label}
+                    </p>
+                    <p className="mt-2 text-3xl font-black text-stone-950">
+                      {value}
+                    </p>
+                  </article>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-5">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-red-800">
+                      Crop Damage Deer
+                    </p>
+                    <p className="mt-2 text-4xl font-black text-stone-950">
+                      {annualTotals.cropDamageDeer}
+                    </p>
+                  </div>
+
+                  <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-xl">
+                    <label className="min-w-0 flex-1">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-stone-600">
+                        Number to Add
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        inputMode="numeric"
+                        value={cropDamageAmount}
+                        onChange={(event) =>
+                          setCropDamageAmount(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void addCropDamageDeer();
+                          }
+                        }}
+                        placeholder="Enter number"
+                        className="w-full rounded-md border border-red-200 bg-white px-4 py-3 font-bold outline-none focus:border-red-800 focus:ring-2 focus:ring-red-100"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void addCropDamageDeer()}
+                      disabled={addingCropDamage}
+                      className="rounded-md bg-red-800 px-6 py-3 font-bold text-white transition hover:bg-red-700 disabled:opacity-50 sm:self-end"
+                    >
+                      {addingCropDamage ? "Adding..." : "Add to Total"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {[
             ["Total Loaded", stats.total],
             ["Today", stats.today],
@@ -1186,7 +1820,8 @@ export default function AdminDashboardPage() {
               Customers
             </h2>
             <p className="mt-2 leading-7 text-stone-600">
-              Search customers and review scheduled, fair, deer, and cut-sheet history.
+              Search customers and review scheduled, fair, deer, and cut-sheet
+              history.
             </p>
           </Link>
 
@@ -1409,7 +2044,7 @@ export default function AdminDashboardPage() {
                                 key={appointmentKey}
                                 type="button"
                                 onClick={() => openAppointment(appointment)}
-                                className={`block w-full rounded-md border px-2 py-2 text-left text-xs font-semibold transition ${animalClasses(animal)}`}
+                                className={`block w-full touch-manipulation rounded-md border px-2 py-2 text-left text-xs font-semibold transition ${animalClasses(animal)}`}
                               >
                                 <span className="block truncate font-black">
                                   {name}
@@ -1432,320 +2067,338 @@ export default function AdminDashboardPage() {
         </section>
       </div>
 
-      {selectedAppointment ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Booking details"
-        >
-          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-stone-200 px-6 py-5">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-red-800">
-                  Booking Details
-                </p>
-                <h2 className="mt-1 text-2xl font-black">
-                  {getAppointmentName(selectedAppointment)}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedAppointment(null)}
-                className="rounded-md px-3 py-2 text-xl font-black text-stone-500 transition hover:bg-stone-100 hover:text-stone-950"
-                aria-label="Close booking details"
+      {browserReady && selectedAppointment
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-stone-950/70 p-4 sm:items-center"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Booking details"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setSelectedAppointment(null);
+                }
+              }}
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
+              <div
+                className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl"
+                onMouseDown={(event) => event.stopPropagation()}
+                style={{ WebkitOverflowScrolling: "touch" }}
               >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-5 px-6 py-6">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                    Animal
-                  </p>
-                  <p className="mt-1 font-bold">
-                    {getAppointmentAnimal(selectedAppointment)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                    Status
-                  </p>
-                  <span
-                    className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] ${statusClasses(getAppointmentStatus(selectedAppointment))}`}
+                <div className="flex items-start justify-between border-b border-stone-200 px-6 py-5">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-red-800">
+                      Booking Details
+                    </p>
+                    <h2 className="mt-1 text-2xl font-black">
+                      {getAppointmentName(selectedAppointment)}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAppointment(null)}
+                    className="rounded-md px-3 py-2 text-xl font-black text-stone-500 transition hover:bg-stone-100 hover:text-stone-950"
+                    aria-label="Close booking details"
                   >
-                    {getAppointmentStatus(selectedAppointment)}
-                  </span>
+                    ×
+                  </button>
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                    Date
-                  </p>
-                  <p className="mt-1 font-bold">
-                    {formatDate(getAppointmentDate(selectedAppointment))}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                    Time
-                  </p>
-                  <p className="mt-1 font-bold">
-                    {formatTime(
-                      selectedAppointment,
-                      getAppointmentDate(selectedAppointment),
-                    ) || "Not listed"}
-                  </p>
-                </div>
-              </div>
 
-              {getOwnerContacts(selectedAppointment).length > 0 ? (
-                <div className="rounded-lg bg-red-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
-                    Beef Owner
-                    {getOwnerContacts(selectedAppointment).length === 1
-                      ? ""
-                      : "s"}
-                  </p>
-                  <div className="mt-2 space-y-3">
-                    {getOwnerContacts(selectedAppointment).map(
-                      (ownerContact) => (
-                        <div key={ownerContact.customerId}>
-                          <p className="font-black text-stone-950">
-                            {ownerContact.name}
-                          </p>
-                          {ownerContact.phone ? (
-                            <a
-                              href={`tel:${ownerContact.phone}`}
-                              className="mt-1 inline-block font-bold text-red-800 underline decoration-red-300 underline-offset-4"
-                            >
-                              {ownerContact.phone}
-                            </a>
-                          ) : (
-                            <p className="mt-1 text-sm font-semibold text-stone-500">
-                              No phone number listed
-                            </p>
-                          )}
-                        </div>
-                      ),
+                <div className="space-y-5 px-6 py-6">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Animal
+                      </p>
+                      <p className="mt-1 font-bold">
+                        {getAppointmentAnimal(selectedAppointment)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Status
+                      </p>
+                      <span
+                        className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] ${statusClasses(getAppointmentStatus(selectedAppointment))}`}
+                      >
+                        {getAppointmentStatus(selectedAppointment)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Date
+                      </p>
+                      <p className="mt-1 font-bold">
+                        {formatDate(getAppointmentDate(selectedAppointment))}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Time
+                      </p>
+                      <p className="mt-1 font-bold">
+                        {formatTime(
+                          selectedAppointment,
+                          getAppointmentDate(selectedAppointment),
+                        ) || "Not listed"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {getOwnerContacts(selectedAppointment).length > 0 ? (
+                    <div className="rounded-lg bg-red-50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
+                        Beef Owner
+                        {getOwnerContacts(selectedAppointment).length === 1
+                          ? ""
+                          : "s"}
+                      </p>
+                      <div className="mt-2 space-y-3">
+                        {getOwnerContacts(selectedAppointment).map(
+                          (ownerContact) => (
+                            <div key={ownerContact.customerId}>
+                              <p className="font-black text-stone-950">
+                                {ownerContact.name}
+                              </p>
+                              {ownerContact.phone ? (
+                                <a
+                                  href={`tel:${ownerContact.phone}`}
+                                  className="mt-1 inline-block font-bold text-red-800 underline decoration-red-300 underline-offset-4"
+                                >
+                                  {ownerContact.phone}
+                                </a>
+                              ) : (
+                                <p className="mt-1 text-sm font-semibold text-stone-500">
+                                  No phone number listed
+                                </p>
+                              )}
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-amber-50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-800">
+                        Beef Owner
+                      </p>
+                      <p className="mt-1 font-bold text-amber-950">
+                        No customer share name was found for this booking.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-stone-200 bg-stone-50 p-5">
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-stone-600">
+                        Hanging Weight (lbs)
+                      </span>
+                      <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={hangingWeight}
+                          onChange={(event) =>
+                            setHangingWeight(event.target.value)
+                          }
+                          placeholder="Enter hanging weight"
+                          className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-4 py-3 font-bold outline-none focus:border-red-800 focus:ring-2 focus:ring-red-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={saveHangingWeight}
+                          disabled={
+                            savingWeight ||
+                            selectedAppointment.animal_id === undefined
+                          }
+                          className="rounded-md bg-stone-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {savingWeight ? "Saving..." : "Save Hanging Weight"}
+                        </button>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
+                          Customer Cut Sheet
+                        </p>
+                        <p className="mt-1 font-bold text-stone-950">
+                          {selectedAppointment.cut_sheet_unlocked
+                            ? "Unlocked"
+                            : "Locked"}
+                        </p>
+                      </div>
+                      {selectedAppointment.cut_sheet_token ? (
+                        <a
+                          href={`/cut-sheet/${String(selectedAppointment.cut_sheet_token)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-900 transition hover:bg-red-100"
+                        >
+                          View Cut Sheet Link
+                        </a>
+                      ) : null}
+                    </div>
+
+                    {selectedAppointment.cut_sheet_id ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            selectedAppointment.cut_sheet_unlocked
+                              ? copyCutSheetMessage()
+                              : unlockCutSheet(true)
+                          }
+                          disabled={Boolean(unlockingCutSheet)}
+                          className="rounded-md bg-red-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {unlockingCutSheet === "copy"
+                            ? "Unlocking..."
+                            : selectedAppointment.cut_sheet_unlocked
+                              ? "Copy Cut Sheet Message"
+                              : "Unlock + Copy Message"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => unlockCutSheet(false)}
+                          disabled={
+                            Boolean(unlockingCutSheet) ||
+                            Boolean(selectedAppointment.cut_sheet_unlocked)
+                          }
+                          className="rounded-md border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-stone-950 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {unlockingCutSheet === "no-copy"
+                            ? "Unlocking..."
+                            : selectedAppointment.cut_sheet_unlocked
+                              ? "Already Unlocked"
+                              : "Unlock Without Copying"}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-md bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
+                        No cut sheet is connected to this appointment.
+                      </p>
                     )}
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-lg bg-amber-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-800">
-                    Beef Owner
-                  </p>
-                  <p className="mt-1 font-bold text-amber-950">
-                    No customer share name was found for this booking.
-                  </p>
-                </div>
-              )}
 
-              <div className="rounded-lg border border-stone-200 bg-stone-50 p-5">
-                <label className="block">
-                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-stone-600">
-                    Hanging Weight (lbs)
-                  </span>
-                  <div className="mt-2 flex flex-col gap-3 sm:flex-row">
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={hangingWeight}
-                      onChange={(event) => setHangingWeight(event.target.value)}
-                      placeholder="Enter hanging weight"
-                      className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-4 py-3 font-bold outline-none focus:border-red-800 focus:ring-2 focus:ring-red-100"
-                    />
-                    <button
-                      type="button"
-                      onClick={saveHangingWeight}
-                      disabled={
-                        savingWeight ||
-                        selectedAppointment.animal_id === undefined
-                      }
-                      className="rounded-md bg-stone-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {savingWeight ? "Saving..." : "Save Hanging Weight"}
-                    </button>
-                  </div>
-                </label>
-              </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-800">
+                        Ready for Pickup
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-stone-700">
+                        Mark the animal ready and optionally copy the customer
+                        message for manual sending.
+                      </p>
+                    </div>
 
-              <div className="rounded-lg border border-red-200 bg-red-50 p-5">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
-                      Customer Cut Sheet
-                    </p>
-                    <p className="mt-1 font-bold text-stone-950">
-                      {selectedAppointment.cut_sheet_unlocked
-                        ? "Unlocked"
-                        : "Locked"}
-                    </p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => markReadyForPickup(true)}
+                        disabled={
+                          Boolean(pickupAction) ||
+                          selectedAppointment.animal_id === undefined
+                        }
+                        className="rounded-md bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {pickupAction === "copy"
+                          ? "Saving..."
+                          : "Ready for Pickup + Copy Message"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => markReadyForPickup(false)}
+                        disabled={
+                          Boolean(pickupAction) ||
+                          selectedAppointment.animal_id === undefined
+                        }
+                        className="rounded-md border border-emerald-300 bg-white px-4 py-3 text-sm font-bold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {pickupAction === "no-copy"
+                          ? "Saving..."
+                          : "Ready for Pickup Without Copying"}
+                      </button>
+                    </div>
                   </div>
-                  {selectedAppointment.cut_sheet_token ? (
-                    <a
-                      href={`/cut-sheet/${String(selectedAppointment.cut_sheet_token)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-900 transition hover:bg-red-100"
-                    >
-                      View Cut Sheet Link
-                    </a>
+
+                  {getMessageCustomerPhone(selectedAppointment) ? (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Message Phone
+                      </p>
+                      <p className="mt-1 font-bold">
+                        {getMessageCustomerPhone(selectedAppointment)}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {getString(selectedAppointment, [
+                    "email",
+                    "customer_email",
+                  ]) ? (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Email
+                      </p>
+                      <p className="mt-1 break-all font-bold">
+                        {getString(selectedAppointment, [
+                          "email",
+                          "customer_email",
+                        ])}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {getString(selectedAppointment, [
+                    "notes",
+                    "customer_notes",
+                    "special_instructions",
+                    "comments",
+                  ]) ? (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Notes
+                      </p>
+                      <p className="mt-1 whitespace-pre-wrap text-stone-700">
+                        {getString(selectedAppointment, [
+                          "notes",
+                          "customer_notes",
+                          "special_instructions",
+                          "comments",
+                        ])}
+                      </p>
+                    </div>
                   ) : null}
                 </div>
 
-                {selectedAppointment.cut_sheet_id ? (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        selectedAppointment.cut_sheet_unlocked
-                          ? copyCutSheetMessage()
-                          : unlockCutSheet(true)
-                      }
-                      disabled={Boolean(unlockingCutSheet)}
-                      className="rounded-md bg-red-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {unlockingCutSheet === "copy"
-                        ? "Unlocking..."
-                        : selectedAppointment.cut_sheet_unlocked
-                          ? "Copy Cut Sheet Message"
-                          : "Unlock + Copy Message"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => unlockCutSheet(false)}
-                      disabled={
-                        Boolean(unlockingCutSheet) ||
-                        Boolean(selectedAppointment.cut_sheet_unlocked)
-                      }
-                      className="rounded-md border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-stone-950 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {unlockingCutSheet === "no-copy"
-                        ? "Unlocking..."
-                        : selectedAppointment.cut_sheet_unlocked
-                          ? "Already Unlocked"
-                          : "Unlock Without Copying"}
-                    </button>
-                  </div>
-                ) : (
-                  <p className="mt-4 rounded-md bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
-                    No cut sheet is connected to this appointment.
-                  </p>
-                )}
-              </div>
-
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-800">
-                    Ready for Pickup
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-stone-700">
-                    Mark the animal ready and optionally copy the customer
-                    message for manual sending.
-                  </p>
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col-reverse gap-3 border-t border-stone-200 px-6 py-5 sm:flex-row sm:justify-end">
                   <button
                     type="button"
-                    onClick={() => markReadyForPickup(true)}
-                    disabled={
-                      Boolean(pickupAction) ||
-                      selectedAppointment.animal_id === undefined
-                    }
-                    className="rounded-md bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => setSelectedAppointment(null)}
+                    className="rounded-md border border-stone-300 px-5 py-3 text-sm font-bold transition hover:border-stone-950"
                   >
-                    {pickupAction === "copy"
-                      ? "Saving..."
-                      : "Ready for Pickup + Copy Message"}
+                    Close
                   </button>
                   <button
                     type="button"
-                    onClick={() => markReadyForPickup(false)}
-                    disabled={
-                      Boolean(pickupAction) ||
-                      selectedAppointment.animal_id === undefined
-                    }
-                    className="rounded-md border border-emerald-300 bg-white px-4 py-3 text-sm font-bold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={handleDeleteBooking}
+                    disabled={deleting || selectedAppointment.id === undefined}
+                    className="rounded-md bg-red-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {pickupAction === "no-copy"
-                      ? "Saving..."
-                      : "Ready for Pickup Without Copying"}
+                    {deleting ? "Deleting..." : "Delete Booking"}
                   </button>
                 </div>
               </div>
-
-              {getMessageCustomerPhone(selectedAppointment) ? (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                    Message Phone
-                  </p>
-                  <p className="mt-1 font-bold">
-                    {getMessageCustomerPhone(selectedAppointment)}
-                  </p>
-                </div>
-              ) : null}
-
-              {getString(selectedAppointment, ["email", "customer_email"]) ? (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                    Email
-                  </p>
-                  <p className="mt-1 break-all font-bold">
-                    {getString(selectedAppointment, [
-                      "email",
-                      "customer_email",
-                    ])}
-                  </p>
-                </div>
-              ) : null}
-
-              {getString(selectedAppointment, [
-                "notes",
-                "customer_notes",
-                "special_instructions",
-                "comments",
-              ]) ? (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                    Notes
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-stone-700">
-                    {getString(selectedAppointment, [
-                      "notes",
-                      "customer_notes",
-                      "special_instructions",
-                      "comments",
-                    ])}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex flex-col-reverse gap-3 border-t border-stone-200 px-6 py-5 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedAppointment(null)}
-                className="rounded-md border border-stone-300 px-5 py-3 text-sm font-bold transition hover:border-stone-950"
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteBooking}
-                disabled={deleting || selectedAppointment.id === undefined}
-                className="rounded-md bg-red-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {deleting ? "Deleting..." : "Delete Booking"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </main>
   );
 }
