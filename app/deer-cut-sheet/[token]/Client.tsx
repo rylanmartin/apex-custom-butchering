@@ -181,17 +181,33 @@ function PdfChoice({
       {selected ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute z-[80] -translate-x-1/2 -translate-y-1/2 font-black leading-none"
+          className="pointer-events-none absolute z-[80]"
           style={{
             left: `${markLeft}%`,
             top: `${markTop}%`,
-            color: "#e00000",
-            opacity: 1,
-            fontSize: "clamp(24px, 4.25cqw, 44px)",
-            WebkitTextStroke: "0.75px #e00000",
+            width: `${Math.max(width * 1.25, 5.8)}%`,
+            height: `${Math.max(height * 1.55, 4.4)}%`,
+            transform: "translate(-50%, -50%)",
           }}
         >
-          ✓
+          <span
+            className="absolute left-1/2 top-1/2 block w-[118%] rounded-full bg-red-600"
+            style={{
+              height: "20%",
+              minHeight: "5px",
+              transform: "translate(-50%, -50%) rotate(36deg)",
+              transformOrigin: "center",
+            }}
+          />
+          <span
+            className="absolute left-1/2 top-1/2 block w-[118%] rounded-full bg-red-600"
+            style={{
+              height: "20%",
+              minHeight: "5px",
+              transform: "translate(-50%, -50%) rotate(-36deg)",
+              transformOrigin: "center",
+            }}
+          />
         </span>
       ) : null}
     </>
@@ -365,7 +381,7 @@ export default function DeerCutSheetPage() {
             Deer Cut Order Sheet
           </h1>
           <p className="mt-3 text-stone-300">
-            Tap directly on your choices. A red check means that option is
+            Tap directly on your choices. A large red X means that option is
             selected.
           </p>
         </div>

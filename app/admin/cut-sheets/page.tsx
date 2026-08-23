@@ -505,6 +505,72 @@ const porkTextFields: TextField[] = [
   },
 ];
 
+const porkSausageChoiceMarks: ChoiceMark[] = [
+  { name: "pork_sausage_farmstyle", left: 24.824, top: 27.015, size: "large" },
+  {
+    name: "pork_sausage_sweet_italian",
+    left: 27.859,
+    top: 36.746,
+    size: "large",
+  },
+  { name: "pork_sausage_italian", left: 19.877, top: 46.127, size: "large" },
+  { name: "pork_sausage_regular", left: 21.654, top: 55.727, size: "large" },
+  { name: "pork_sausage_hot", left: 15.441, top: 65.458, size: "large" },
+  { name: "pork_sausage_maple", left: 18.762, top: 75.136, size: "large" },
+];
+
+const porkSausageTextFields: TextField[] = [
+  {
+    name: "pork_sausage_brats_batches",
+    left: 64.08,
+    top: 26.1,
+    width: 4.2,
+    fontScale: 0.017,
+  },
+  {
+    name: "pork_sausage_brats_cheese_batches",
+    left: 64.7,
+    top: 30.93,
+    width: 4.2,
+    fontScale: 0.017,
+  },
+  {
+    name: "pork_sausage_patties_batches",
+    left: 65.48,
+    top: 35.75,
+    width: 4.2,
+    fontScale: 0.017,
+  },
+  {
+    name: "pork_sausage_patties_cheese_batches",
+    left: 64.37,
+    top: 40.59,
+    width: 4.2,
+    fontScale: 0.017,
+  },
+  {
+    name: "pork_sausage_links_batches",
+    left: 64.07,
+    top: 45.41,
+    width: 4.2,
+    fontScale: 0.017,
+  },
+  {
+    name: "pork_sausage_links_cheese_batches",
+    left: 64.42,
+    top: 50.24,
+    width: 4.2,
+    fontScale: 0.017,
+  },
+  {
+    name: "pork_sausage_ground_pork_lbs",
+    left: 75.21,
+    top: 55.08,
+    width: 4.2,
+    fontScale: 0.017,
+  },
+];
+
 function firstRelation<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
@@ -672,14 +738,26 @@ function drawRedCheck(
   const color = rgb(1, 0, 0);
 
   page.drawLine({
-    start: { x: centerX - markSize * 0.45, y: centerY },
-    end: { x: centerX - markSize * 0.1, y: centerY - markSize * 0.35 },
+    start: {
+      x: centerX - markSize * 0.52,
+      y: centerY - markSize * 0.38,
+    },
+    end: {
+      x: centerX + markSize * 0.52,
+      y: centerY + markSize * 0.38,
+    },
     thickness,
     color,
   });
   page.drawLine({
-    start: { x: centerX - markSize * 0.1, y: centerY - markSize * 0.35 },
-    end: { x: centerX + markSize * 0.55, y: centerY + markSize * 0.45 },
+    start: {
+      x: centerX - markSize * 0.52,
+      y: centerY + markSize * 0.38,
+    },
+    end: {
+      x: centerX + markSize * 0.52,
+      y: centerY - markSize * 0.38,
+    },
     thickness,
     color,
   });
@@ -806,6 +884,38 @@ async function buildCombinedPdf(items: QueueItem[]) {
 
     const template = speciesTemplates.get(item.species);
     if (!template) continue;
+
+    if (item.species === "pork") {
+      if (template.getPageCount() < 2) {
+        throw new Error(
+          "The pork cut-sheet PDF must contain the cut sheet first and sausage sheet second.",
+        );
+      }
+
+      const [cutPage, sausagePage] = await output.copyPages(template, [0, 1]);
+      output.addPage(cutPage);
+      output.addPage(sausagePage);
+      const data = getFormData(item.sheet);
+
+      drawTextFields(cutPage, data, porkTextFields, font);
+      for (const mark of porkChoiceMarks) {
+        if (
+          shouldPrintLivestockMark(mark.name) &&
+          data[mark.name] === true
+        ) {
+          drawRedCheck(cutPage, mark.left, mark.top, mark.size);
+        }
+      }
+
+      drawTextFields(sausagePage, data, porkSausageTextFields, font);
+      for (const mark of porkSausageChoiceMarks) {
+        if (data[mark.name] === true) {
+          drawRedCheck(sausagePage, mark.left, mark.top, mark.size);
+        }
+      }
+      continue;
+    }
+
     const [page] = await output.copyPages(template, [0]);
     output.addPage(page);
     const data = getFormData(item.sheet);
