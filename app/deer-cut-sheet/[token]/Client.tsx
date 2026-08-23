@@ -181,11 +181,14 @@ function PdfChoice({
       {selected ? (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-1/2 font-black leading-none text-red-600"
+          className="pointer-events-none absolute z-[80] -translate-x-1/2 -translate-y-1/2 font-black leading-none"
           style={{
             left: `${markLeft}%`,
             top: `${markTop}%`,
-            fontSize: "clamp(12px, 2.15cqw, 20px)",
+            color: "#e00000",
+            opacity: 1,
+            fontSize: "clamp(24px, 4.25cqw, 44px)",
+            WebkitTextStroke: "0.75px #e00000",
           }}
         >
           ✓

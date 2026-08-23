@@ -847,14 +847,14 @@ function createBlankForm(
 
 function getMarkFontSize(pageWidth: number, markSize: MarkSize | undefined) {
   if (markSize === "large") {
-    return Math.max(12, pageWidth * 0.022);
+    return Math.max(28, pageWidth * 0.044);
   }
 
   if (markSize === "tiny") {
-    return Math.max(8, pageWidth * 0.0145);
+    return Math.max(18, pageWidth * 0.027);
   }
 
-  return Math.max(9, pageWidth * 0.0175);
+  return Math.max(23, pageWidth * 0.035);
 }
 
 export default function CutSheetClient() {
@@ -1203,13 +1203,17 @@ export default function CutSheetClient() {
 
         .choice-mark {
           position: absolute;
-          z-index: 45;
+          z-index: 80;
           pointer-events: none;
-          color: #ff0000;
+          display: block;
+          color: #e00000 !important;
+          opacity: 1 !important;
           font-family: Arial, Helvetica, sans-serif;
           font-weight: 900;
           line-height: 1;
           transform: translate(-50%, -54%);
+          -webkit-text-stroke: 0.75px #e00000;
+          text-shadow: 0 0 0 #e00000;
           user-select: none;
         }
 
@@ -1256,7 +1260,12 @@ export default function CutSheetClient() {
           }
 
           .choice-mark {
-            color: #ff0000 !important;
+            display: block !important;
+            color: #e00000 !important;
+            opacity: 1 !important;
+            -webkit-text-stroke: 0.75px #e00000 !important;
+            print-color-adjust: exact !important;
+            -webkit-print-color-adjust: exact !important;
           }
         }
       `}</style>
@@ -1412,6 +1421,7 @@ export default function CutSheetClient() {
                     key={`${choice.name}-hit`}
                     type="button"
                     disabled={submitted}
+                    aria-pressed={selected}
                     aria-label={choice.name.replaceAll("_", " ")}
                     title={choice.name.replaceAll("_", " ")}
                     onClick={() => chooseOption(group, choice.name)}
@@ -1435,6 +1445,9 @@ export default function CutSheetClient() {
                       style={{
                         left: `${choice.markLeft}%`,
                         top: `${choice.markTop}%`,
+                        color: "#e00000",
+                        opacity: 1,
+                        zIndex: 80,
                         fontSize: `${getMarkFontSize(
                           pageWidth,
                           choice.markSize,
