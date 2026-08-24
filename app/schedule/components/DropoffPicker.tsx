@@ -45,7 +45,7 @@ function readStringArray(value: unknown, objectKeys: string[]) {
 
       if (Array.isArray(possibleArray)) {
         return possibleArray.filter(
-          (item): item is string => typeof item === "string"
+          (item): item is string => typeof item === "string",
         );
       }
     }
@@ -55,15 +55,17 @@ function readStringArray(value: unknown, objectKeys: string[]) {
 }
 
 function formatTuesdayTimeRange(times: string[]) {
-  if (times.length === 0) {
-    return "Tuesday morning";
-  }
-
-  if (times.length === 1) {
-    return `Tuesday at ${times[0]}`;
-  }
-
+  if (times.length === 0) return "Tuesday morning";
+  if (times.length === 1) return `Tuesday at ${times[0]}`;
   return `Tuesday ${times[0]}-${times[times.length - 1]}`;
+}
+
+function getWeekday(dateValue: string) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+
+  if (!year || !month || !day) return -1;
+
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
 export default function DropoffPicker({
@@ -94,18 +96,18 @@ export default function DropoffPicker({
       if (error) {
         console.error(error);
         setSettingsMessage(
-          "Could not load scheduling settings. Default Tuesday times are being used."
+          "Could not load scheduling settings. Default Tuesday times are being used.",
         );
         setSettingsLoading(false);
         return;
       }
 
       const timeSetting = data?.find(
-        (row) => row.setting_key === "tuesday_times"
+        (row) => row.setting_key === "tuesday_times",
       )?.setting_value;
 
       const closedDateSetting = data?.find(
-        (row) => row.setting_key === "closed_dates"
+        (row) => row.setting_key === "closed_dates",
       )?.setting_value;
 
       const savedTimes = readStringArray(timeSetting, ["times", "values"]);
@@ -114,9 +116,7 @@ export default function DropoffPicker({
         "values",
       ]);
 
-      if (savedTimes.length > 0) {
-        setTuesdayTimes(savedTimes);
-      }
+      if (savedTimes.length > 0) setTuesdayTimes(savedTimes);
 
       setClosedDates(savedClosedDates);
       setSettingsLoading(false);
@@ -131,42 +131,35 @@ export default function DropoffPicker({
 
   const closedDateSet = useMemo(() => new Set(closedDates), [closedDates]);
 
-  const availableTimes = useMemo(() => {
-    if (!dropoffDate) return [];
+  const dateMessage = useMemo(() => {
+    if (!dropoffDate) return "";
 
-    const [year, month, day] = dropoffDate.split("-").map(Number);
-    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    const weekday = getWeekday(dropoffDate);
+
+    if (weekday !== 1 && weekday !== 2) {
+      return "Drop-off is only available Monday evening or Tuesday morning.";
+    }
+
+    if (closedDateSet.has(dropoffDate)) {
+      return "The shop is closed on that date. Please choose another Monday or Tuesday.";
+    }
+
+    return "";
+  }, [closedDateSet, dropoffDate]);
+
+  const availableTimes = useMemo(() => {
+    if (!dropoffDate || closedDateSet.has(dropoffDate)) return [];
+
+    const weekday = getWeekday(dropoffDate);
 
     if (weekday === 1) return mondayTimes;
     if (weekday === 2) return tuesdayTimes;
 
     return [];
-  }, [dropoffDate, tuesdayTimes]);
+  }, [closedDateSet, dropoffDate, tuesdayTimes]);
 
   function handleDateChange(value: string) {
-    if (!value) {
-      setDropoffDate("");
-      setDropoffTime("");
-      return;
-    }
-
-    const [year, month, day] = value.split("-").map(Number);
-    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-
-    if (weekday !== 1 && weekday !== 2) {
-      alert("Drop-off is only available Monday evening or Tuesday morning.");
-      setDropoffDate("");
-      setDropoffTime("");
-      return;
-    }
-
-    if (closedDateSet.has(value)) {
-      alert("The shop is closed on that date. Please choose another Monday or Tuesday.");
-      setDropoffDate("");
-      setDropoffTime("");
-      return;
-    }
-
+    // Alerts and immediately erasing the date dismiss Safari's date picker.
     setDropoffDate(value);
     setDropoffTime("");
   }
@@ -177,23 +170,45 @@ export default function DropoffPicker({
 
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="mb-2 block font-semibold">Drop-Off Date</label>
+          <label className="mb-2 block font-semibold" htmlFor="dropoff-date">
+            Drop-Off Date
+          </label>
           <input
+            id="dropoff-date"
             type="date"
             value={dropoffDate}
             onChange={(event) => handleDateChange(event.target.value)}
+            aria-invalid={Boolean(dateMessage)}
+            aria-describedby="dropoff-date-help dropoff-date-message"
             className="w-full rounded-lg border px-4 py-3"
           />
-          <p className="mt-2 text-sm text-gray-600">
+          <p id="dropoff-date-help" className="mt-2 text-sm text-gray-600">
             Monday 4:00 PM-5:30 PM or {formatTuesdayTimeRange(tuesdayTimes)}.
           </p>
+
+          {dateMessage && (
+            <p
+              id="dropoff-date-message"
+              className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-900"
+            >
+              {dateMessage}
+            </p>
+          )}
         </div>
 
         <div>
-          <label className="mb-2 block font-semibold">Drop-Off Time</label>
+          <label className="mb-2 block font-semibold" htmlFor="dropoff-time">
+            Drop-Off Time
+          </label>
           <select
+            id="dropoff-time"
             value={dropoffTime}
-            disabled={!dropoffDate || settingsLoading || availableTimes.length === 0}
+            disabled={
+              !dropoffDate ||
+              settingsLoading ||
+              Boolean(dateMessage) ||
+              availableTimes.length === 0
+            }
             onChange={(event) => setDropoffTime(event.target.value)}
             className="w-full rounded-lg border px-4 py-3 disabled:bg-gray-100"
           >
