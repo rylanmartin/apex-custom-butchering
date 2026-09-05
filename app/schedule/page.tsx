@@ -29,6 +29,9 @@ type CapacityData = {
   pork_remaining: number;
 };
 
+const FIRST_PUBLIC_BOOKING_DATE = "2027-01-01";
+const FIRST_PUBLIC_BOOKING_LABEL = "January 1, 2027";
+
 function getSaleTypeLabel(saleType: SaleType) {
   if (saleType === "halves") {
     return "Halves";
@@ -173,6 +176,13 @@ export default function SchedulePage() {
   function validateBooking(
     currentCapacity: CapacityData | null
   ) {
+    if (
+      dropoffDate &&
+      dropoffDate < FIRST_PUBLIC_BOOKING_DATE
+    ) {
+      return `We are fully booked for the remainder of 2026. Online booking begins ${FIRST_PUBLIC_BOOKING_LABEL}.`;
+    }
+
     if (
       !animalType ||
       !dropoffDate ||
@@ -456,10 +466,21 @@ export default function SchedulePage() {
           Schedule Processing
         </h1>
 
-        <p className="mb-10 text-lg text-gray-600">
+        <p className="mb-6 text-lg text-gray-600">
           Schedule your animal drop-off in a few
           simple steps.
         </p>
+
+        <section className="mb-10 rounded-2xl border border-red-300 bg-red-50 p-6 shadow-sm">
+          <h2 className="text-2xl font-black text-red-800">
+            2026 Schedule Full
+          </h2>
+          <p className="mt-2 text-lg font-semibold text-red-900">
+            We are fully booked for the remainder of 2026. Online booking
+            begins January 1, 2027. Please select a January 2027 or later
+            drop-off date.
+          </p>
+        </section>
 
         <AnimalSelector
           animalType={animalType}
@@ -472,7 +493,29 @@ export default function SchedulePage() {
 
             <DropoffPicker
               dropoffDate={dropoffDate}
-              setDropoffDate={setDropoffDate}
+              setDropoffDate={(value) => {
+                const nextDate =
+                  typeof value === "function"
+                    ? (value as (previous: string) => string)(
+                        dropoffDate
+                      )
+                    : value;
+
+                if (
+                  nextDate &&
+                  nextDate < FIRST_PUBLIC_BOOKING_DATE
+                ) {
+                  setDropoffDate("");
+                  setDropoffTime("");
+                  setMessage(
+                    `We are fully booked for the remainder of 2026. Online booking begins ${FIRST_PUBLIC_BOOKING_LABEL}.`
+                  );
+                  return;
+                }
+
+                setDropoffDate(nextDate);
+                setMessage("");
+              }}
               dropoffTime={dropoffTime}
               setDropoffTime={setDropoffTime}
             />
