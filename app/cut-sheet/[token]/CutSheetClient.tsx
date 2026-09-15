@@ -38,9 +38,6 @@ type MarkSize = "small" | "large" | "tiny";
 type Choice = {
   name: string;
 
-  // Pork uses the second PDF page for sausage choices.
-  page?: number;
-
   // Exact location where the visible check mark is drawn.
   markLeft: number;
   markTop: number;
@@ -57,12 +54,10 @@ type Choice = {
 type ChoiceGroup = {
   id: string;
   choices: Choice[];
-  maxSelections?: number;
 };
 
 type TextField = {
   name: string;
-  page?: number;
   left: number;
   top: number;
   width: number;
@@ -716,66 +711,6 @@ const porkChoiceGroups: ChoiceGroup[] = [
   yesNoGroup("pork_lard", 78.05, 78.05, 49.4),
   yesNoGroup("pork_chops", 78.05, 78.05, 59.45),
   yesNoGroup("pork_loin_roast", 78.05, 78.05, 70.05),
-  {
-    id: "pork_sausage_flavors",
-    maxSelections: 2,
-    choices: [
-      {
-        name: "pork_sausage_farmstyle",
-        page: 2,
-        markLeft: 24.824,
-        markTop: 27.015,
-        hitWidth: 8,
-        hitHeight: 5,
-        markSize: "large",
-      },
-      {
-        name: "pork_sausage_sweet_italian",
-        page: 2,
-        markLeft: 27.859,
-        markTop: 36.746,
-        hitWidth: 8,
-        hitHeight: 5,
-        markSize: "large",
-      },
-      {
-        name: "pork_sausage_italian",
-        page: 2,
-        markLeft: 19.877,
-        markTop: 46.127,
-        hitWidth: 8,
-        hitHeight: 5,
-        markSize: "large",
-      },
-      {
-        name: "pork_sausage_regular",
-        page: 2,
-        markLeft: 21.654,
-        markTop: 55.727,
-        hitWidth: 8,
-        hitHeight: 5,
-        markSize: "large",
-      },
-      {
-        name: "pork_sausage_hot",
-        page: 2,
-        markLeft: 15.441,
-        markTop: 65.458,
-        hitWidth: 8,
-        hitHeight: 5,
-        markSize: "large",
-      },
-      {
-        name: "pork_sausage_maple",
-        page: 2,
-        markLeft: 18.762,
-        markTop: 75.136,
-        hitWidth: 8,
-        hitHeight: 5,
-        markSize: "large",
-      },
-    ],
-  },
 ];
 
 // The yes/no rows on the pork artwork are vertical. Move each "No" mark
@@ -837,62 +772,6 @@ const porkTextFields: TextField[] = [
     height: 11,
     multiline: true,
     fontScale: 0.015,
-  },
-  {
-    name: "pork_sausage_brats_batches",
-    page: 2,
-    left: 64.08,
-    top: 26.1,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_brats_cheese_batches",
-    page: 2,
-    left: 64.7,
-    top: 30.93,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_patties_batches",
-    page: 2,
-    left: 65.48,
-    top: 35.75,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_patties_cheese_batches",
-    page: 2,
-    left: 64.37,
-    top: 40.59,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_links_batches",
-    page: 2,
-    left: 64.07,
-    top: 45.41,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_links_cheese_batches",
-    page: 2,
-    left: 64.42,
-    top: 50.24,
-    width: 4.2,
-    fontScale: 0.017,
-  },
-  {
-    name: "pork_sausage_ground_pork_lbs",
-    page: 2,
-    left: 75.21,
-    top: 55.08,
-    width: 4.2,
-    fontScale: 0.017,
   },
 ];
 
@@ -964,6 +843,18 @@ function createBlankForm(
   }
 
   return values;
+}
+
+function getMarkFontSize(pageWidth: number, markSize: MarkSize | undefined) {
+  if (markSize === "large") {
+    return Math.max(12, pageWidth * 0.022);
+  }
+
+  if (markSize === "tiny") {
+    return Math.max(8, pageWidth * 0.0145);
+  }
+
+  return Math.max(9, pageWidth * 0.0175);
 }
 
 export default function CutSheetClient() {
@@ -1114,28 +1005,6 @@ export default function CutSheetClient() {
         return updated;
       }
 
-      if (group.maxSelections) {
-        if (wasSelected) {
-          updated[selectedName] = false;
-          return updated;
-        }
-
-        const selectedCount = group.choices.filter((choice) =>
-          Boolean(current[choice.name]),
-        ).length;
-
-        if (selectedCount >= group.maxSelections) {
-          setMessage(
-            `You can choose up to ${group.maxSelections} sausage flavors.`,
-          );
-          return current;
-        }
-
-        updated[selectedName] = true;
-        setMessage("");
-        return updated;
-      }
-
       for (const choice of group.choices) {
         updated[choice.name] = false;
       }
@@ -1250,19 +1119,6 @@ export default function CutSheetClient() {
     );
   }
 
-  if (!cutSheet.unlocked) {
-    return (
-      <main className="min-h-screen bg-gray-100 px-6 py-12">
-        <div className="mx-auto max-w-3xl rounded-xl bg-white p-8 shadow">
-          <h1 className="mb-4 text-4xl font-bold">Your Cut Sheet Is Locked</h1>
-          <p className="text-lg text-gray-700">
-            APEX Custom Butchering has not unlocked this cut sheet yet.
-          </p>
-        </div>
-      </main>
-    );
-  }
-
   const submitted = Boolean(cutSheet.submitted_at);
   const config = getSpeciesConfig(cutSheet.animal_type);
 
@@ -1334,7 +1190,7 @@ export default function CutSheetClient() {
 
         .choice-stamp {
           position: absolute;
-          z-index: 80;
+          z-index: 45;
           pointer-events: none;
           transform: translate(-50%, -50%);
           user-select: none;
@@ -1344,21 +1200,21 @@ export default function CutSheetClient() {
           position: absolute;
           left: 50%;
           top: 50%;
-          width: 118%;
-          height: 20%;
+          width: 112%;
+          height: 18%;
           min-height: 5px;
           border-radius: 999px;
-          background: #e00000;
-          box-shadow: 0 0 0 1px rgba(130, 0, 0, 0.25);
+          background: rgba(220, 0, 0, 0.82);
+          box-shadow: 0 0 0 1px rgba(150, 0, 0, 0.18);
           transform-origin: center;
         }
 
         .choice-stamp-line-a {
-          transform: translate(-50%, -50%) rotate(36deg);
+          transform: translate(-50%, -50%) rotate(34deg);
         }
 
         .choice-stamp-line-b {
-          transform: translate(-50%, -50%) rotate(-36deg);
+          transform: translate(-50%, -50%) rotate(-34deg);
         }
 
         @media print {
@@ -1386,20 +1242,6 @@ export default function CutSheetClient() {
             box-shadow: none !important;
           }
 
-          .sheet-page {
-            break-after: page;
-            page-break-after: always;
-          }
-
-          .sheet-page:last-child {
-            break-after: auto;
-            page-break-after: auto;
-          }
-
-          .sheet-page + .sheet-page {
-            margin-top: 0 !important;
-          }
-
           .react-pdf__Page,
           .react-pdf__Page__canvas {
             width: 8.5in !important;
@@ -1418,9 +1260,9 @@ export default function CutSheetClient() {
           }
 
           .choice-stamp-line {
-            background: #e00000 !important;
-            print-color-adjust: exact !important;
+            background: rgba(220, 0, 0, 0.9) !important;
             -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
       `}</style>
@@ -1430,13 +1272,10 @@ export default function CutSheetClient() {
           <h1 className="text-3xl font-bold">{config.title}</h1>
 
           <p className="mt-2 text-gray-600">
-            Click the original printed box on the PDF to select an option. A
-            large red X means the option is selected.
+            Click the original printed box on the PDF to select an option.
             {config.species === "beef"
               ? " For Round, Steak, Roast, and Cube may be selected together. Grind clears the other Round choices."
-              : config.species === "pork"
-                ? " Complete both pork pages. On page two, choose up to two sausage flavors and enter the batches or pounds on the printed blanks."
-                : ""}
+              : " A large red X means the option is selected."}
           </p>
 
           {submitted && (
@@ -1491,7 +1330,7 @@ export default function CutSheetClient() {
         </section>
 
         <div
-          className="sheet-shell mx-auto bg-white shadow-2xl"
+          className="sheet-shell relative mx-auto overflow-hidden bg-white shadow-2xl"
           style={{ width: `${pageWidth}px` }}
         >
           <Document
@@ -1513,155 +1352,113 @@ export default function CutSheetClient() {
               setPdfError(error.message);
             }}
           >
-            {Array.from(
-              { length: config.species === "pork" ? 2 : 1 },
-              (_, index) => {
-                const pageNumber = index + 1;
-                const pageTextFields = config.textFields.filter(
-                  (field) => (field.page ?? 1) === pageNumber,
-                );
-                const pageChoiceGroups = config.choiceGroups
-                  .map((group) => ({
-                    ...group,
-                    choices: group.choices.filter(
-                      (choice) => (choice.page ?? 1) === pageNumber,
-                    ),
-                  }))
-                  .filter((group) => group.choices.length > 0);
-
-                return (
-                  <div
-                    key={`page-${pageNumber}`}
-                    className="sheet-page relative mt-6 overflow-hidden bg-white first:mt-0"
-                  >
-                    <Page
-                      pageNumber={pageNumber}
-                      width={pageWidth}
-                      renderTextLayer={false}
-                      renderAnnotationLayer={false}
-                    />
-
-                    <div className="pointer-events-none absolute inset-0 z-30">
-                      {pageTextFields.map((field) => {
-                        const fontSize = Math.max(
-                          9,
-                          pageWidth * (field.fontScale || 0.017),
-                        );
-
-                        const style = {
-                          left: `${field.left}%`,
-                          top: `${field.top}%`,
-                          width: `${field.width}%`,
-                          height: field.height
-                            ? `${field.height}%`
-                            : "2.45%",
-                          fontSize: `${fontSize}px`,
-                          pointerEvents: "auto" as const,
-                        };
-
-                        if (field.multiline) {
-                          return (
-                            <textarea
-                              key={field.name}
-                              value={String(formData[field.name] || "")}
-                              disabled={submitted}
-                              onChange={(event) =>
-                                updateText(field.name, event.target.value)
-                              }
-                              style={style}
-                              className="sheet-textarea absolute resize-none px-1 py-0.5"
-                            />
-                          );
-                        }
-
-                        return (
-                          <input
-                            key={field.name}
-                            value={String(formData[field.name] || "")}
-                            disabled={submitted}
-                            inputMode={
-                              field.name.includes("batches") ||
-                              field.name.endsWith("_lbs")
-                                ? "decimal"
-                                : "text"
-                            }
-                            onChange={(event) =>
-                              updateText(field.name, event.target.value)
-                            }
-                            style={style}
-                            className="sheet-input absolute px-1 py-0.5"
-                          />
-                        );
-                      })}
-
-                      {pageChoiceGroups.flatMap((group) =>
-                        group.choices.flatMap((choice) => {
-                          const selected = Boolean(formData[choice.name]);
-                          const hitLeft = choice.hitLeft ?? choice.markLeft;
-                          const hitTop = choice.hitTop ?? choice.markTop;
-                          const hitWidth = choice.hitWidth ?? 5.2;
-                          const hitHeight = choice.hitHeight ?? 2.8;
-
-                          const elements = [
-                            <button
-                              key={`${choice.name}-hit`}
-                              type="button"
-                              disabled={submitted}
-                              aria-pressed={selected}
-                              aria-label={choice.name.replaceAll("_", " ")}
-                              title={choice.name.replaceAll("_", " ")}
-                              onClick={() =>
-                                chooseOption(group, choice.name)
-                              }
-                              style={{
-                                left: `${hitLeft}%`,
-                                top: `${hitTop}%`,
-                                width: `${hitWidth}%`,
-                                height: `${hitHeight}%`,
-                                transform: "translate(-50%, -50%)",
-                                pointerEvents: "auto",
-                              }}
-                              className="choice-hit-area absolute"
-                            />,
-                          ];
-
-                          if (selected) {
-                            const stampWidth = Math.max(
-                              hitWidth * 1.35,
-                              choice.markSize === "large" ? 9 : 5.8,
-                            );
-                            const stampHeight = Math.max(
-                              hitHeight * 1.6,
-                              choice.markSize === "large" ? 6.5 : 4.4,
-                            );
-
-                            elements.push(
-                              <span
-                                key={`${choice.name}-mark`}
-                                aria-hidden="true"
-                                style={{
-                                  left: `${choice.markLeft}%`,
-                                  top: `${choice.markTop}%`,
-                                  width: `${stampWidth}%`,
-                                  height: `${stampHeight}%`,
-                                }}
-                                className="choice-stamp"
-                              >
-                                <span className="choice-stamp-line choice-stamp-line-a" />
-                                <span className="choice-stamp-line choice-stamp-line-b" />
-                              </span>,
-                            );
-                          }
-
-                          return elements;
-                        }),
-                      )}
-                    </div>
-                  </div>
-                );
-              },
-            )}
+            <Page
+              pageNumber={1}
+              width={pageWidth}
+              renderTextLayer={false}
+              renderAnnotationLayer={false}
+            />
           </Document>
+
+          <div className="pointer-events-none absolute inset-0 z-30">
+            {config.textFields.map((field) => {
+              const fontSize = Math.max(
+                9,
+                pageWidth * (field.fontScale || 0.017),
+              );
+
+              const style = {
+                left: `${field.left}%`,
+                top: `${field.top}%`,
+                width: `${field.width}%`,
+                height: field.height ? `${field.height}%` : "2.45%",
+                fontSize: `${fontSize}px`,
+                pointerEvents: "auto" as const,
+              };
+
+              if (field.multiline) {
+                return (
+                  <textarea
+                    key={field.name}
+                    value={String(formData[field.name] || "")}
+                    disabled={submitted}
+                    onChange={(event) =>
+                      updateText(field.name, event.target.value)
+                    }
+                    style={style}
+                    className="sheet-textarea absolute resize-none px-1 py-0.5"
+                  />
+                );
+              }
+
+              return (
+                <input
+                  key={field.name}
+                  value={String(formData[field.name] || "")}
+                  disabled={submitted}
+                  onChange={(event) =>
+                    updateText(field.name, event.target.value)
+                  }
+                  style={style}
+                  className="sheet-input absolute px-1 py-0.5"
+                />
+              );
+            })}
+
+            {config.choiceGroups.flatMap((group) =>
+              group.choices.flatMap((choice) => {
+                const selected = Boolean(formData[choice.name]);
+                const hitLeft = choice.hitLeft ?? choice.markLeft;
+                const hitTop = choice.hitTop ?? choice.markTop;
+                const hitWidth = choice.hitWidth ?? 5.2;
+                const hitHeight = choice.hitHeight ?? 2.8;
+
+                const elements = [
+                  <button
+                    key={`${choice.name}-hit`}
+                    type="button"
+                    disabled={submitted}
+                    aria-label={choice.name.replaceAll("_", " ")}
+                    title={choice.name.replaceAll("_", " ")}
+                    onClick={() => chooseOption(group, choice.name)}
+                    style={{
+                      left: `${hitLeft}%`,
+                      top: `${hitTop}%`,
+                      width: `${hitWidth}%`,
+                      height: `${hitHeight}%`,
+                      transform: "translate(-50%, -50%)",
+                      pointerEvents: "auto",
+                    }}
+                    className="choice-hit-area absolute"
+                  />,
+                ];
+
+                if (selected) {
+                  const stampWidth = Math.max(hitWidth * 1.35, 5.8);
+                  const stampHeight = Math.max(hitHeight * 1.55, 4.4);
+
+                  elements.push(
+                    <span
+                      key={`${choice.name}-mark`}
+                      aria-hidden="true"
+                      style={{
+                        left: `${hitLeft}%`,
+                        top: `${hitTop}%`,
+                        width: `${stampWidth}%`,
+                        height: `${stampHeight}%`,
+                      }}
+                      className="choice-stamp"
+                    >
+                      <span className="choice-stamp-line choice-stamp-line-a" />
+                      <span className="choice-stamp-line choice-stamp-line-b" />
+                    </span>,
+                  );
+                }
+
+                return elements;
+              }),
+            )}
+          </div>
         </div>
       </main>
     </>

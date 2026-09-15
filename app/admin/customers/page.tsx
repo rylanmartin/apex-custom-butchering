@@ -29,6 +29,16 @@ type CustomerProfile = {
   history: HistoryItem[];
 };
 
+type AnimalAssignment = {
+  id: string;
+  appointmentId: string;
+  animalNumber: number;
+  animalType: string;
+  dropoffDate: string;
+  producerName: string;
+  producerPhone: string;
+};
+
 function asString(value: unknown) {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
@@ -85,6 +95,61 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<CustomerProfile[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<CustomerProfile | null>(null);
+  const [assignments, setAssignments] = useState<AnimalAssignment[]>([]);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [assignmentMessage, setAssignmentMessage] = useState("");
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
+  const [assignmentSearch, setAssignmentSearch] = useState("");
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [newCustomerPortion, setNewCustomerPortion] = useState<"whole" | "halves" | "quarters">("whole");
+
+  async function loadAnimalAssignments() {
+    setAssignmentLoading(true);
+    setAssignmentMessage("");
+
+    const { data, error } = await supabase
+      .from("appointments")
+      .select(`
+        id,
+        animal_type,
+        dropoff_date,
+        customers (name, phone),
+        animals (id, animal_number, animal_type)
+      `)
+      .order("dropoff_date", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      setAssignmentMessage(`Could not load animals: ${error.message}`);
+      setAssignments([]);
+      setAssignmentLoading(false);
+      return;
+    }
+
+    const rows: AnimalAssignment[] = [];
+    for (const appointment of data ?? []) {
+      const customer = Array.isArray(appointment.customers)
+        ? appointment.customers[0]
+        : appointment.customers;
+
+      for (const animal of appointment.animals ?? []) {
+        rows.push({
+          id: String(animal.id),
+          appointmentId: String(appointment.id),
+          animalNumber: Number(animal.animal_number ?? 1),
+          animalType: String(animal.animal_type ?? appointment.animal_type ?? "animal"),
+          dropoffDate: String(appointment.dropoff_date ?? ""),
+          producerName: String(customer?.name ?? "Unknown producer"),
+          producerPhone: String(customer?.phone ?? ""),
+        });
+      }
+    }
+
+    setAssignments(rows);
+    setAssignmentLoading(false);
+  }
 
   useEffect(() => {
     let active = true;
@@ -101,7 +166,7 @@ export default function CustomersPage() {
         return;
       }
 
-      await loadCustomers();
+      await Promise.all([loadCustomers(), loadAnimalAssignments()]);
     }
 
     void initialize();
@@ -331,6 +396,113 @@ export default function CustomersPage() {
     setLoading(false);
   }
 
+  async function addCustomerToAnimal() {
+    if (assignmentSaving) return;
+
+    const assignment = assignments.find((item) => item.id === selectedAssignmentId);
+    if (!assignment) {
+      setAssignmentMessage("Choose the animal this customer belongs to.");
+      return;
+    }
+
+    const name = newCustomerName.trim();
+    const phone = newCustomerPhone.trim();
+
+    if (!name || !phone) {
+      setAssignmentMessage("Enter the customer's name and phone number.");
+      return;
+    }
+
+    setAssignmentSaving(true);
+    setAssignmentMessage("Adding customer and creating their cut sheet...");
+
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from("customers")
+        .insert({ name, phone, email: null })
+        .select("id")
+        .single();
+
+      if (customerError || !customer?.id) {
+        throw new Error(customerError?.message || "Could not create the customer.");
+      }
+
+      const { data: cutSheet, error: cutSheetError } = await supabase
+        .from("cut_sheets")
+        .insert({
+          animal_id: assignment.id,
+          customer_id: customer.id,
+          animal_type: assignment.animalType.toLowerCase(),
+          unlocked: true,
+          text_sent: false,
+          contact_method: "call",
+          form_data: {
+            customer_name: name,
+            phone_number: phone,
+            farmer_name: assignment.producerName,
+            ...(assignment.animalType.toLowerCase() === "beef"
+              ? {
+                  portion_whole: newCustomerPortion === "whole",
+                  portion_half: newCustomerPortion === "halves",
+                  portion_quarter: newCustomerPortion === "quarters",
+                }
+              : {}),
+          },
+        })
+        .select("secure_token")
+        .single();
+
+      if (cutSheetError || !cutSheet?.secure_token) {
+        await supabase.from("customers").delete().eq("id", customer.id);
+        throw new Error(cutSheetError?.message || "Could not create the customer's cut sheet.");
+      }
+
+      setAssignmentMessage(
+        `${name} was added to ${assignment.producerName}'s ${assignment.animalType} #${assignment.animalNumber}. Their cut sheet is now available on the customer portal.`
+      );
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+      setSelectedAssignmentId("");
+      setAssignmentSearch("");
+      setNewCustomerPortion("whole");
+      await loadCustomers();
+    } catch (error) {
+      console.error(error);
+      setAssignmentMessage(
+        error instanceof Error ? error.message : "Could not add the customer."
+      );
+    } finally {
+      setAssignmentSaving(false);
+    }
+  }
+
+  const selectedAssignment = assignments.find((item) => item.id === selectedAssignmentId) ?? null;
+
+  const currentBeefAssignments = useMemo(() => {
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    return assignments.filter((assignment) => {
+      if (assignment.animalType.toLowerCase() !== "beef") return false;
+      if (!assignment.dropoffDate || assignment.dropoffDate < todayKey) return false;
+
+      const query = assignmentSearch.trim().toLowerCase();
+      if (!query) return true;
+
+      const haystack = [
+        assignment.producerName,
+        assignment.producerPhone,
+        `beef ${assignment.animalNumber}`,
+        String(assignment.animalNumber),
+        assignment.dropoffDate,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [assignments, assignmentSearch]);
+
   const filteredCustomers = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return customers;
@@ -365,8 +537,8 @@ export default function CustomersPage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={loadCustomers}
-              disabled={loading}
+              onClick={() => { void loadCustomers(); void loadAnimalAssignments(); }}
+              disabled={loading || assignmentLoading}
               className="rounded-md border border-white/25 px-4 py-3 text-sm font-bold hover:bg-white hover:text-stone-950 disabled:opacity-50"
             >
               {loading ? "Refreshing..." : "Refresh"}
@@ -383,6 +555,79 @@ export default function CustomersPage() {
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8 lg:px-12">
         <section className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-red-800">Add Customer to an Animal</p>
+            <h2 className="mt-1 text-2xl font-black uppercase tracking-tight">Customer Cut-Sheet Assignment</h2>
+            <p className="mt-2 max-w-3xl text-stone-600">
+              Choose the producer's animal, then add the customer who owns that portion. This creates the customer's cut sheet and ties it to that exact animal.
+            </p>
+          </div>
+          {assignmentMessage ? (
+            <div className="mt-5 rounded-md border border-stone-300 bg-stone-50 px-4 py-3 font-semibold">{assignmentMessage}</div>
+          ) : null}
+          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+            <div className="lg:col-span-2">
+              <label className="block">
+                <span className="text-sm font-black uppercase tracking-wide">Search Current Beef</span>
+                <input
+                  type="search"
+                  value={assignmentSearch}
+                  onChange={(event) => {
+                    setAssignmentSearch(event.target.value);
+                    setSelectedAssignmentId("");
+                  }}
+                  placeholder="Search producer or beef #..."
+                  className="mt-2 w-full rounded-md border border-stone-300 bg-white px-4 py-3 font-semibold outline-none focus:border-red-800 focus:ring-2 focus:ring-red-100"
+                />
+              </label>
+              <p className="mt-2 text-sm font-semibold text-stone-500">
+                Only current and future beef is shown. Old beef is automatically left out.
+              </p>
+
+              <label className="mt-4 block">
+                <span className="text-sm font-black uppercase tracking-wide">Which Beef?</span>
+                <select
+                  value={selectedAssignmentId}
+                  onChange={(event) => setSelectedAssignmentId(event.target.value)}
+                  className="mt-2 w-full rounded-md border border-stone-300 bg-white px-4 py-3 font-semibold"
+                  disabled={assignmentLoading}
+                >
+                  <option value="">
+                    {assignmentLoading ? "Loading current beef..." : currentBeefAssignments.length ? "Select producer / beef" : "No current beef found"}
+                  </option>
+                  {currentBeefAssignments.map((assignment) => (
+                    <option key={assignment.id} value={assignment.id}>
+                      {assignment.producerName} — Beef #{assignment.animalNumber} — {assignment.dropoffDate}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-sm font-black uppercase tracking-wide">Customer Name</span>
+              <input value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} placeholder="Ryan Smith" className="mt-2 w-full rounded-md border border-stone-300 px-4 py-3" />
+            </label>
+            <label className="block">
+              <span className="text-sm font-black uppercase tracking-wide">Customer Phone</span>
+              <input type="tel" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} placeholder="989-555-1234" className="mt-2 w-full rounded-md border border-stone-300 px-4 py-3" />
+            </label>
+            {selectedAssignment?.animalType.toLowerCase() === "beef" ? (
+              <label className="block lg:col-span-2">
+                <span className="text-sm font-black uppercase tracking-wide">Beef Portion</span>
+                <select value={newCustomerPortion} onChange={(event) => setNewCustomerPortion(event.target.value as "whole" | "halves" | "quarters")} className="mt-2 w-full rounded-md border border-stone-300 bg-white px-4 py-3">
+                  <option value="whole">Whole</option>
+                  <option value="halves">Half</option>
+                  <option value="quarters">Quarter</option>
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <button type="button" onClick={addCustomerToAnimal} disabled={assignmentSaving} className="mt-6 rounded-md bg-red-800 px-6 py-3 font-black text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60">
+            {assignmentSaving ? "Adding Customer..." : "Add Customer & Create Cut Sheet"}
+          </button>
+        </section>
+
+        <section className="mt-8 rounded-xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-red-800">

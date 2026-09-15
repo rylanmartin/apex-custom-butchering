@@ -121,6 +121,7 @@ export default function HomePage() {
             <Link href="/pricing" className="transition hover:text-red-400">Pricing</Link>
             <a href="#gallery" className="transition hover:text-red-400">Gallery</a>
             <a href="#cut-sheets" className="transition hover:text-red-400">Cut Sheets</a>
+            <Link href="/cut-sheet" className="rounded-md border border-white/30 px-4 py-2 transition hover:bg-white hover:text-stone-950">Fill Out Cut Sheet</Link>
             <Link href="/schedule" className="rounded-md bg-red-800 px-4 py-2 transition hover:bg-red-700">Schedule</Link>
           </nav>
         </div>
@@ -136,6 +137,7 @@ export default function HomePage() {
           <p className="mt-6 max-w-2xl text-lg leading-7 text-stone-200">Professional custom butchering with careful handling, dependable service, and attention to every order.</p>
           <div className="mt-10 flex w-full max-w-xl flex-col gap-4 sm:flex-row">
             <Link href="/schedule" className="inline-flex min-h-14 flex-1 items-center justify-center gap-3 rounded-md bg-red-800 px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white transition hover:bg-red-700"><CalendarIcon />Schedule Processing</Link>
+            <Link href="/cut-sheet" className="inline-flex min-h-14 flex-1 items-center justify-center rounded-md border border-white/60 bg-white/10 px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-stone-950">Fill Out Your Cut Sheet</Link>
             <a href={phoneHref} className="inline-flex min-h-14 flex-1 items-center justify-center gap-3 rounded-md border border-white/60 bg-white/10 px-7 py-4 text-sm font-bold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-stone-950"><PhoneIcon />Call Now</a>
           </div>
         </div>
@@ -187,6 +189,11 @@ export default function HomePage() {
             <p className="text-sm font-bold uppercase tracking-[0.3em] text-red-800">Plan Your Order</p>
             <h2 className="mt-4 text-4xl font-black uppercase tracking-tight sm:text-5xl">Cut Sheets</h2>
             <div className="mx-auto mt-6 h-1 w-16 bg-red-800" />
+          </div>
+          <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-red-200 bg-red-50 p-7 text-center">
+            <h3 className="text-2xl font-black uppercase tracking-tight text-red-900">Already Have an Animal Here?</h3>
+            <p className="mt-2 text-stone-700">Search your name and open your customer cut sheet to enter your own cut preferences.</p>
+            <Link href="/cut-sheet" className="mt-5 inline-flex min-h-14 items-center justify-center rounded-md bg-red-800 px-8 py-4 text-sm font-black uppercase tracking-[0.12em] text-white transition hover:bg-red-700">Fill Out Your Cut Sheet</Link>
           </div>
           {cutSheets.length ? (
             <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -17,9 +17,10 @@ type OwnerContact = {
 };
 
 type DashboardStats = {
-  scheduled: number;
-  nextKillDay: number;
-  yearTotal: number;
+  total: number;
+  today: number;
+  upcoming: number;
+  completed: number;
 };
 
 type AdminNotification = {
@@ -294,24 +295,16 @@ function getAppointmentName(record: AppointmentRecord) {
   return `${first} ${last}`.trim() || "Customer";
 }
 
-function titleCase(value: string) {
-  return value
-    .replaceAll("_", " ")
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
-}
-
 function getAppointmentAnimal(record: AppointmentRecord) {
-  const animal = getString(record, [
-    "animal_type",
-    "species",
-    "animal",
-    "livestock_type",
-    "processing_type",
-  ]);
-  return animal ? titleCase(animal) : "Processing Appointment";
+  return (
+    getString(record, [
+      "animal_type",
+      "species",
+      "animal",
+      "livestock_type",
+      "processing_type",
+    ]) || "Processing appointment"
+  );
 }
 
 function normalizeAnnualSpecies(
@@ -387,28 +380,14 @@ function formatTime(record: AppointmentRecord, date: Date | null) {
     "scheduled_time",
     "time",
   ]);
-
-  if (rawTime) {
-    const match = rawTime.match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?/);
-    if (match) {
-      const hour24 = Number(match[1]);
-      const minute = match[2];
-      const period = hour24 >= 12 ? "PM" : "AM";
-      const hour12 = hour24 % 12 || 12;
-      return `${hour12}:${minute} ${period}`;
-    }
-    return rawTime;
-  }
-
+  if (rawTime) return rawTime;
   if (!date) return "";
   const hasTime =
     date.getHours() !== 0 || date.getMinutes() !== 0 || date.getSeconds() !== 0;
-
   return hasTime
     ? new Intl.DateTimeFormat("en-US", {
         hour: "numeric",
         minute: "2-digit",
-        hour12: true,
       }).format(date)
     : "";
 }
@@ -495,8 +474,14 @@ export default function AdminDashboardPage() {
   const [deleting, setDeleting] = useState(false);
   const [selectedAppointment, setSelectedAppointment] =
     useState<AppointmentRecord | null>(null);
-  const [animalCountDraft, setAnimalCountDraft] = useState("1");
-  const [savingAnimalCount, setSavingAnimalCount] = useState(false);
+  const [hangingWeight, setHangingWeight] = useState("");
+  const [savingWeight, setSavingWeight] = useState(false);
+  const [unlockingCutSheet, setUnlockingCutSheet] = useState<
+    "copy" | "no-copy" | null
+  >(null);
+  const [pickupAction, setPickupAction] = useState<"copy" | "no-copy" | null>(
+    null,
+  );
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -660,34 +645,12 @@ export default function AdminDashboardPage() {
           : Number(manualResult.data?.count ?? 0),
     };
 
-    const today = new Date();
-    const todayKey = dateKey(
-      new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-    );
-
     for (const animal of (animalResult.data ?? []) as Array<
       Record<string, unknown>
     >) {
+      if (!isProcessedAnimalStatus(animal.status)) continue;
       const species = appointmentSpecies.get(String(animal.appointment_id));
-      if (!species) continue;
-
-      const appointment = (appointmentResult.data ?? []).find(
-        (row) => String((row as AppointmentRecord).id) === String(animal.appointment_id),
-      ) as AppointmentRecord | undefined;
-      const appointmentDate = appointment ? getAppointmentDate(appointment) : null;
-      if (!appointmentDate) continue;
-
-      const appointmentDateKey = dateKey(
-        new Date(
-          appointmentDate.getFullYear(),
-          appointmentDate.getMonth(),
-          appointmentDate.getDate(),
-        ),
-      );
-
-      if (appointmentDate.getFullYear() === currentYear && appointmentDateKey <= todayKey) {
-        nextTotals[species] += 1;
-      }
+      if (species) nextTotals[species] += 1;
     }
 
     setAnnualTotals(nextTotals);
@@ -899,20 +862,11 @@ export default function AdminDashboardPage() {
       string,
       Record<string, unknown>
     >();
-    const animalCountByAppointment = new Map<string, number>();
-
     for (const animal of animals) {
       const appointmentId = String(animal.appointment_id ?? "");
-      if (!appointmentId) continue;
-
-      animalCountByAppointment.set(
-        appointmentId,
-        (animalCountByAppointment.get(appointmentId) ?? 0) + 1,
-      );
-
-      if (!primaryAnimalByAppointment.has(appointmentId)) {
-        primaryAnimalByAppointment.set(appointmentId, animal);
-      }
+      if (!appointmentId || primaryAnimalByAppointment.has(appointmentId))
+        continue;
+      primaryAnimalByAppointment.set(appointmentId, animal);
     }
 
     const cutSheetByAppointment = new Map<string, Record<string, unknown>>();
@@ -942,8 +896,6 @@ export default function AdminDashboardPage() {
         owner_names: ownerContacts.map((contact) => contact.name),
         owner_contacts: ownerContacts,
         animal_id: primaryAnimal?.id,
-        animal_count:
-          animalCountByAppointment.get(String(appointment.id)) ?? 1,
         hanging_weight: primaryAnimal?.hanging_weight ?? "",
         animal_status: primaryAnimal?.status ?? "",
         cut_sheet_id: cutSheet?.id,
@@ -1082,6 +1034,382 @@ export default function AdminDashboardPage() {
     annualTotals.deer +
     annualTotals.cropDamageDeer;
 
+  const stats = useMemo<DashboardStats>(() => {
+    const now = new Date();
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    ).getTime();
+    const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
+    let today = 0;
+    let upcoming = 0;
+    let completed = 0;
+
+    for (const appointment of appointments) {
+      const date = getAppointmentDate(appointment);
+      const status = getAppointmentStatus(appointment).toLowerCase();
+      if (
+        status.includes("complete") ||
+        status.includes("picked") ||
+        status.includes("finished")
+      )
+        completed += 1;
+      if (date) {
+        const timestamp = date.getTime();
+        if (timestamp >= todayStart && timestamp < tomorrowStart) today += 1;
+        if (timestamp >= todayStart) upcoming += 1;
+      }
+    }
+
+    return { total: appointments.length, today, upcoming, completed };
+  }, [appointments]);
+
+  const calendarDays = useMemo(
+    () => buildCalendarDays(calendarMonth),
+    [calendarMonth],
+  );
+
+  const appointmentsByDay = useMemo(() => {
+    const grouped = new Map<string, AppointmentRecord[]>();
+    for (const appointment of appointments) {
+      const date = getAppointmentDate(appointment);
+      if (!date) continue;
+      const key = dateKey(date);
+      const current = grouped.get(key) ?? [];
+      current.push(appointment);
+      grouped.set(key, current);
+    }
+
+    for (const [, dayAppointments] of grouped) {
+      dayAppointments.sort((a, b) => {
+        const aTime = getAppointmentDate(a)?.getTime() ?? 0;
+        const bTime = getAppointmentDate(b)?.getTime() ?? 0;
+        return aTime - bTime;
+      });
+    }
+
+    return grouped;
+  }, [appointments]);
+
+  function openAppointment(appointment: AppointmentRecord) {
+    setSelectedAppointment(appointment);
+    const currentWeight = appointment.hanging_weight;
+    setHangingWeight(
+      typeof currentWeight === "number" || typeof currentWeight === "string"
+        ? String(currentWeight)
+        : "",
+    );
+    setActionMessage("");
+  }
+
+  async function saveHangingWeight() {
+    if (!selectedAppointment?.animal_id || savingWeight) return;
+
+    const numericWeight = Number.parseFloat(hangingWeight);
+    if (
+      !hangingWeight.trim() ||
+      Number.isNaN(numericWeight) ||
+      numericWeight <= 0
+    ) {
+      setActionMessage("Enter a valid hanging weight greater than zero.");
+      return;
+    }
+
+    setSavingWeight(true);
+    setActionMessage("");
+
+    const { error } = await supabase
+      .from("animals")
+      .update({
+        hanging_weight: numericWeight,
+        status: selectedAppointment.cut_sheet_unlocked
+          ? "waiting_on_cut_sheet"
+          : "weight_entered",
+      })
+      .eq("id", selectedAppointment.animal_id);
+
+    if (error) {
+      console.error("Unable to save hanging weight:", error);
+      setActionMessage(`Could not save the hanging weight: ${error.message}`);
+      setSavingWeight(false);
+      return;
+    }
+
+    const updatedAppointment = {
+      ...selectedAppointment,
+      hanging_weight: numericWeight,
+      animal_status: selectedAppointment.cut_sheet_unlocked
+        ? "waiting_on_cut_sheet"
+        : "weight_entered",
+    };
+
+    setSelectedAppointment(updatedAppointment);
+    setAppointments((current) =>
+      current.map((appointment) =>
+        String(appointment.id) === String(selectedAppointment.id)
+          ? updatedAppointment
+          : appointment,
+      ),
+    );
+    setActionMessage("Hanging weight saved.");
+    setSavingWeight(false);
+  }
+
+  function getCutSheetLink(appointment: AppointmentRecord) {
+    const token = String(appointment.cut_sheet_token || "");
+    if (!token) return "";
+    return typeof window === "undefined"
+      ? `/cut-sheet/${token}`
+      : `${window.location.origin}/cut-sheet/${token}`;
+  }
+
+  function getMessageCustomerName(appointment: AppointmentRecord) {
+    return (
+      getString(appointment, ["cut_sheet_customer_name"]) ||
+      getStringList(appointment, "owner_names")[0] ||
+      getAppointmentName(appointment)
+    );
+  }
+
+  function getMessageCustomerPhone(appointment: AppointmentRecord) {
+    return getString(appointment, [
+      "cut_sheet_customer_phone",
+      "phone",
+      "phone_number",
+      "customer_phone",
+    ]);
+  }
+
+  async function copyToClipboard(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = value;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textArea);
+      return copied;
+    }
+  }
+
+  function buildCutSheetMessage(
+    appointment: AppointmentRecord,
+    numericWeight: number,
+  ) {
+    const customerName = getMessageCustomerName(appointment);
+    return (
+      `Hello ${customerName}, your hanging weight is ${numericWeight} lbs. ` +
+      `Your cut sheet is ready. Please complete it here: ${getCutSheetLink(appointment)}`
+    );
+  }
+
+  async function copyCutSheetMessage() {
+    if (!selectedAppointment) return;
+
+    const numericWeight = Number.parseFloat(hangingWeight);
+    if (
+      !hangingWeight.trim() ||
+      Number.isNaN(numericWeight) ||
+      numericWeight <= 0
+    ) {
+      setActionMessage(
+        "Save a valid hanging weight before copying the cut-sheet message.",
+      );
+      return;
+    }
+
+    if (!getCutSheetLink(selectedAppointment)) {
+      setActionMessage(
+        "Could not copy the message because this cut sheet has no private link.",
+      );
+      return;
+    }
+
+    const copied = await copyToClipboard(
+      buildCutSheetMessage(selectedAppointment, numericWeight),
+    );
+    const phone = getMessageCustomerPhone(selectedAppointment);
+    setActionMessage(
+      copied
+        ? `Cut-sheet message copied. Paste it into Messages${phone ? ` for ${phone}` : ""} and send it.`
+        : "Could not copy the cut-sheet message. Select and copy it manually.",
+    );
+  }
+
+  async function unlockCutSheet(copyMessage: boolean) {
+    if (!selectedAppointment?.cut_sheet_id || unlockingCutSheet) return;
+
+    const numericWeight = Number.parseFloat(hangingWeight);
+    if (
+      !hangingWeight.trim() ||
+      Number.isNaN(numericWeight) ||
+      numericWeight <= 0
+    ) {
+      setActionMessage(
+        "Save a valid hanging weight before unlocking the cut sheet.",
+      );
+      return;
+    }
+
+    const mode = copyMessage ? "copy" : "no-copy";
+    setUnlockingCutSheet(mode);
+    setActionMessage("");
+
+    const contactMethod = copyMessage ? "text" : "call";
+    const { error: cutSheetError } = await supabase
+      .from("cut_sheets")
+      .update({
+        unlocked: true,
+        contact_method: contactMethod,
+      })
+      .eq("id", selectedAppointment.cut_sheet_id);
+
+    if (cutSheetError) {
+      console.error("Unable to unlock cut sheet:", cutSheetError);
+      setActionMessage(
+        `Could not unlock the cut sheet: ${cutSheetError.message}`,
+      );
+      setUnlockingCutSheet(null);
+      return;
+    }
+
+    const { error: animalError } = await supabase
+      .from("animals")
+      .update({
+        hanging_weight: numericWeight,
+        status: "waiting_on_cut_sheet",
+      })
+      .eq("id", selectedAppointment.animal_id);
+
+    if (animalError) {
+      console.error("Unable to update animal status:", animalError);
+    }
+
+    const updatedAppointment = {
+      ...selectedAppointment,
+      hanging_weight: numericWeight,
+      animal_status: "waiting_on_cut_sheet",
+      cut_sheet_unlocked: true,
+      cut_sheet_contact_method: contactMethod,
+    };
+
+    setSelectedAppointment(updatedAppointment);
+    setAppointments((current) =>
+      current.map((appointment) =>
+        String(appointment.id) === String(selectedAppointment.id)
+          ? updatedAppointment
+          : appointment,
+      ),
+    );
+
+    if (copyMessage) {
+      const copied = await copyToClipboard(
+        buildCutSheetMessage(updatedAppointment, numericWeight),
+      );
+      const phone = getMessageCustomerPhone(updatedAppointment);
+      setActionMessage(
+        copied
+          ? `Cut sheet unlocked and message copied. Paste it into Messages${phone ? ` for ${phone}` : ""} and send it.`
+          : "Cut sheet unlocked, but the message could not be copied. Use Copy Cut Sheet Message to try again.",
+      );
+    } else {
+      setActionMessage("Cut sheet unlocked without copying a message.");
+    }
+    setUnlockingCutSheet(null);
+  }
+
+  async function markReadyForPickup(copyMessage: boolean) {
+    if (!selectedAppointment?.animal_id || pickupAction) return;
+
+    const mode = copyMessage ? "copy" : "no-copy";
+    setPickupAction(mode);
+    setActionMessage("");
+
+    const { error: animalError } = await supabase
+      .from("animals")
+      .update({ status: "ready_for_pickup" })
+      .eq("id", selectedAppointment.animal_id);
+
+    if (animalError) {
+      console.error("Unable to mark animal ready for pickup:", animalError);
+      setActionMessage(
+        `Could not mark the animal ready for pickup: ${animalError.message}`,
+      );
+      setPickupAction(null);
+      return;
+    }
+
+    let copiedPickupMessage = false;
+
+    if (copyMessage) {
+      const customerName = getMessageCustomerName(selectedAppointment);
+
+      const defaultMessage =
+        `Hello ${customerName}, your animal is processed and ready for pickup at ` +
+        `Apex Custom Butchering. Please give us two days to get your meat completely ` +
+        `frozen. If you could bring coolers or boxes to put your meat in, that would ` +
+        `be great. We are looking forward to seeing you soon!`;
+
+      let textMessage = defaultMessage;
+
+      const { data: settingsData, error: settingsError } = await supabase
+        .from("shop_settings")
+        .select("key, value")
+        .in("key", [
+          "ready_for_pickup_message",
+          "pickup_message",
+          "pickup_text_message",
+        ]);
+
+      if (!settingsError && Array.isArray(settingsData)) {
+        const savedSetting = settingsData.find((item) => {
+          const value = item?.value;
+          return typeof value === "string" && Boolean(value.trim());
+        });
+
+        if (savedSetting && typeof savedSetting.value === "string") {
+          textMessage = savedSetting.value
+            .replaceAll("[Customer Name]", customerName)
+            .replaceAll("{{customer_name}}", customerName);
+        }
+      }
+
+      copiedPickupMessage = await copyToClipboard(textMessage);
+    }
+
+    const updatedAppointment = {
+      ...selectedAppointment,
+      animal_status: "ready_for_pickup",
+    };
+
+    setSelectedAppointment(updatedAppointment);
+    setAppointments((current) =>
+      current.map((appointment) =>
+        String(appointment.id) === String(selectedAppointment.id)
+          ? updatedAppointment
+          : appointment,
+      ),
+    );
+
+    const phone = getMessageCustomerPhone(updatedAppointment);
+    setActionMessage(
+      copyMessage
+        ? copiedPickupMessage
+          ? `Animal marked ready for pickup and message copied. Paste it into Messages${phone ? ` for ${phone}` : ""} and send it.`
+          : "Animal marked ready for pickup, but the message could not be copied."
+        : "Animal marked ready for pickup without copying a message.",
+    );
+    await loadAnnualProcessingTotals();
+    setPickupAction(null);
+  }
+
   async function handleSignOut() {
     setSigningOut(true);
     await supabase.auth.signOut();
@@ -1124,191 +1452,18 @@ export default function AdminDashboardPage() {
     setDeleting(false);
   }
 
-  const stats = useMemo<DashboardStats>(() => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayKey = dateKey(today);
-    const currentYear = today.getFullYear();
-
-    const nextKillDay = new Date(today);
-    const daysUntilTuesday = (2 - today.getDay() + 7) % 7;
-    nextKillDay.setDate(
-      today.getDate() + (daysUntilTuesday === 0 ? 7 : daysUntilTuesday),
+  if (authChecking) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-stone-100 px-6">
+        <div className="rounded-lg bg-white px-8 py-6 text-center shadow-sm">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-stone-200 border-t-red-800" />
+          <p className="mt-4 font-semibold text-stone-700">
+            Checking administrator access...
+          </p>
+        </div>
+      </main>
     );
-    const nextKillDayKey = dateKey(nextKillDay);
-
-    let scheduled = 0;
-    let nextKillDayTotal = 0;
-    let yearTotal = 0;
-
-    for (const appointment of appointments) {
-      const date = getAppointmentDate(appointment);
-      if (!date) continue;
-
-      const appointmentDateKey = dateKey(
-        new Date(date.getFullYear(), date.getMonth(), date.getDate()),
-      );
-      const animalCount = Math.max(1, Number(appointment.animal_count ?? 1));
-
-      if (appointmentDateKey >= todayKey) {
-        scheduled += animalCount;
-      }
-
-      if (appointmentDateKey === nextKillDayKey) {
-        nextKillDayTotal += animalCount;
-      }
-
-      if (date.getFullYear() === currentYear && appointmentDateKey <= todayKey) {
-        yearTotal += animalCount;
-      }
-    }
-
-    return {
-      scheduled,
-      nextKillDay: nextKillDayTotal,
-      yearTotal,
-    };
-  }, [appointments]);
-
-  const calendarDays = useMemo(
-    () => buildCalendarDays(calendarMonth),
-    [calendarMonth],
-  );
-
-  const appointmentsByDay = useMemo(() => {
-    const grouped = new Map<string, AppointmentRecord[]>();
-    for (const appointment of appointments) {
-      const date = getAppointmentDate(appointment);
-      if (!date) continue;
-      const key = dateKey(date);
-      const current = grouped.get(key) ?? [];
-      current.push(appointment);
-      grouped.set(key, current);
-    }
-
-    for (const [, dayAppointments] of grouped) {
-      dayAppointments.sort((a, b) => {
-        const aTime = getAppointmentDate(a)?.getTime() ?? 0;
-        const bTime = getAppointmentDate(b)?.getTime() ?? 0;
-        return aTime - bTime;
-      });
-    }
-
-    return grouped;
-  }, [appointments]);
-
-  function openAppointment(appointment: AppointmentRecord) {
-    setSelectedAppointment(appointment);
-    setAnimalCountDraft(String(Number(appointment.animal_count ?? 1)));
-    setActionMessage("");
   }
-
-  async function saveAnimalCount() {
-    if (!selectedAppointment?.id || savingAnimalCount) return;
-
-    const requestedCount = Number.parseInt(animalCountDraft, 10);
-    if (!Number.isInteger(requestedCount) || requestedCount < 1) {
-      setActionMessage("Enter an animal quantity of at least 1.");
-      return;
-    }
-
-    setSavingAnimalCount(true);
-    setActionMessage("");
-
-    const appointmentId = selectedAppointment.id;
-    const { data: animalRows, error: animalLoadError } = await supabase
-      .from("animals")
-      .select("id, animal_number, animal_type, status")
-      .eq("appointment_id", appointmentId)
-      .order("animal_number", { ascending: true });
-
-    if (animalLoadError) {
-      setActionMessage(`Could not load animals: ${animalLoadError.message}`);
-      setSavingAnimalCount(false);
-      return;
-    }
-
-    const animals = (animalRows ?? []) as Array<Record<string, unknown>>;
-    const currentCount = animals.length || Number(selectedAppointment.animal_count ?? 1);
-
-    if (requestedCount === currentCount) {
-      setActionMessage("Animal quantity is already set to that number.");
-      setSavingAnimalCount(false);
-      return;
-    }
-
-    if (requestedCount < currentCount) {
-      const removed = animals.slice(requestedCount).filter((animal) => animal.id !== undefined);
-      const removedIds = removed.map((animal) => String(animal.id));
-
-      if (removedIds.length > 0) {
-        const { data: existingSheets, error: sheetError } = await supabase
-          .from("cut_sheets")
-          .select("id, animal_id, submitted_at")
-          .in("animal_id", removedIds);
-
-        if (sheetError) {
-          setActionMessage(`Could not verify cut sheets: ${sheetError.message}`);
-          setSavingAnimalCount(false);
-          return;
-        }
-
-        const submittedSheet = (existingSheets ?? []).find((sheet) => Boolean(sheet.submitted_at));
-        if (submittedSheet) {
-          setActionMessage(
-            "That animal already has a submitted cut sheet, so the quantity cannot be reduced without protecting that order.",
-          );
-          setSavingAnimalCount(false);
-          return;
-        }
-
-        const { error: deleteError } = await supabase
-          .from("animals")
-          .delete()
-          .in("id", removedIds);
-
-        if (deleteError) {
-          setActionMessage(`Could not reduce the animal quantity: ${deleteError.message}`);
-          setSavingAnimalCount(false);
-          return;
-        }
-      }
-    } else {
-      const animalType = String(
-        selectedAppointment.animal_type ?? selectedAppointment.species ?? selectedAppointment.animal ?? "animal",
-      ).toLowerCase();
-
-      const newRows = Array.from(
-        { length: requestedCount - currentCount },
-        (_, index) => ({
-          appointment_id: appointmentId,
-          animal_type: animalType,
-          animal_number: currentCount + index + 1,
-          status: "scheduled",
-        }),
-      );
-
-      const { error: insertError } = await supabase.from("animals").insert(newRows);
-      if (insertError) {
-        setActionMessage(`Could not increase the animal quantity: ${insertError.message}`);
-        setSavingAnimalCount(false);
-        return;
-      }
-    }
-
-    const updatedAppointment = { ...selectedAppointment, animal_count: requestedCount };
-    setSelectedAppointment(updatedAppointment);
-    setAppointments((current) =>
-      current.map((appointment) =>
-        String(appointment.id) === String(appointmentId) ? updatedAppointment : appointment,
-      ),
-    );
-    setAnimalCountDraft(String(requestedCount));
-    setActionMessage(`Animal quantity updated to ${requestedCount}.`);
-    await loadAppointments();
-    setSavingAnimalCount(false);
-  }
-
 
   return (
     <main className="min-h-screen bg-stone-100 text-stone-950">
@@ -1464,7 +1619,7 @@ export default function AdminDashboardPage() {
                 {new Date().getFullYear()} Shop Total
               </span>
               <span className="mt-1 block text-xl font-black uppercase tracking-tight text-stone-950">
-                Total Animals This Year
+                Animals Processed This Year
               </span>
               <span className="mt-1 block text-sm font-semibold text-stone-500">
                 Click to view the species breakdown.
@@ -1473,7 +1628,7 @@ export default function AdminDashboardPage() {
 
             <span className="flex shrink-0 items-center gap-4">
               <span className="text-4xl font-black text-red-800">
-                {annualTotalsLoading ? "…" : stats.yearTotal}
+                {annualTotalsLoading ? "…" : annualProcessedTotal}
               </span>
               <span
                 className={`text-2xl font-black transition ${annualTotalsOpen ? "rotate-180" : ""}`}
@@ -1495,8 +1650,8 @@ export default function AdminDashboardPage() {
                     {new Date().getFullYear()} Processed Animals
                   </h2>
                   <p className="mt-1 text-sm font-semibold text-stone-500">
-                    Livestock totals update automatically after each scheduled
-                    kill day. Deer are counted from Deer Drop-Off.
+                    Livestock totals update when an animal is marked Ready for
+                    Pickup. Deer are counted from Deer Drop-Off.
                   </p>
                 </div>
                 <button
@@ -1587,11 +1742,12 @@ export default function AdminDashboardPage() {
           ) : null}
         </section>
 
-        <section className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="mt-5 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ["Animals Scheduled", stats.scheduled],
-            ["Next Kill Day", stats.nextKillDay],
-            ["Total This Year", stats.yearTotal],
+            ["Total Loaded", stats.total],
+            ["Today", stats.today],
+            ["Upcoming", stats.upcoming],
+            ["Completed", stats.completed],
           ].map(([label, value]) => (
             <article
               key={String(label)}
@@ -1910,12 +2066,7 @@ export default function AdminDashboardPage() {
                                   {name}
                                 </span>
                                 <span className="mt-0.5 block truncate opacity-80">
-                                  {titleCase(animal)}
-                                  {` · ${Number(appointment.animal_count ?? 1)} ${
-                                    Number(appointment.animal_count ?? 1) === 1
-                                      ? "Animal"
-                                      : "Animals"
-                                  }`}
+                                  {animal}
                                   {time ? ` · ${time}` : ""}
                                 </span>
                               </button>
@@ -1974,57 +2125,39 @@ export default function AdminDashboardPage() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                        Producer / Customer
-                      </p>
-                      <p className="mt-1 font-bold">
-                        {getAppointmentName(selectedAppointment)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                        Phone Number
-                      </p>
-                      <p className="mt-1 font-bold">
-                        {getString(selectedAppointment, [
-                          "phone",
-                          "customer_phone",
-                          "phone_number",
-                        ]) || "No phone number listed"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
                         Animal
                       </p>
                       <p className="mt-1 font-bold">
-                        {titleCase(getAppointmentAnimal(selectedAppointment))}
+                        {getAppointmentAnimal(selectedAppointment)}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                        Animals Bringing
+                        Status
+                      </p>
+                      <span
+                        className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] ${statusClasses(getAppointmentStatus(selectedAppointment))}`}
+                      >
+                        {getAppointmentStatus(selectedAppointment)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Date
                       </p>
                       <p className="mt-1 font-bold">
-                        {Number(selectedAppointment.animal_count ?? 1)}
+                        {formatDate(getAppointmentDate(selectedAppointment))}
                       </p>
                     </div>
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                        Drop-Off Time
+                        Time
                       </p>
                       <p className="mt-1 font-bold">
                         {formatTime(
                           selectedAppointment,
                           getAppointmentDate(selectedAppointment),
-                        ) || "Time not listed"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
-                        Date Picked
-                      </p>
-                      <p className="mt-1 font-bold">
-                        {formatDate(getAppointmentDate(selectedAppointment))}
+                        ) || "Not listed"}
                       </p>
                     </div>
                   </div>
@@ -2032,83 +2165,231 @@ export default function AdminDashboardPage() {
                   {getOwnerContacts(selectedAppointment).length > 0 ? (
                     <div className="rounded-lg bg-red-50 p-4">
                       <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
-                        Shares
+                        Beef Owner
+                        {getOwnerContacts(selectedAppointment).length === 1
+                          ? ""
+                          : "s"}
                       </p>
-                      <div className="mt-3 space-y-3">
+                      <div className="mt-2 space-y-3">
                         {getOwnerContacts(selectedAppointment).map(
-                          (ownerContact, index) => (
-                            <div
-                              key={ownerContact.customerId}
-                              className="flex items-start justify-between gap-4 border-b border-red-100 pb-3 last:border-0 last:pb-0"
-                            >
-                              <div>
-                                <p className="font-black text-stone-950">
-                                  Share {index + 1}
+                          (ownerContact) => (
+                            <div key={ownerContact.customerId}>
+                              <p className="font-black text-stone-950">
+                                {ownerContact.name}
+                              </p>
+                              {ownerContact.phone ? (
+                                <a
+                                  href={`tel:${ownerContact.phone}`}
+                                  className="mt-1 inline-block font-bold text-red-800 underline decoration-red-300 underline-offset-4"
+                                >
+                                  {ownerContact.phone}
+                                </a>
+                              ) : (
+                                <p className="mt-1 text-sm font-semibold text-stone-500">
+                                  No phone number listed
                                 </p>
-                                <p className="mt-0.5 font-bold text-stone-950">
-                                  {ownerContact.name}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                {ownerContact.phone ? (
-                                  <a
-                                    href={`tel:${ownerContact.phone}`}
-                                    className="font-bold text-red-800 underline decoration-red-300 underline-offset-4"
-                                  >
-                                    {ownerContact.phone}
-                                  </a>
-                                ) : (
-                                  <p className="text-sm font-semibold text-stone-500">
-                                    No phone
-                                  </p>
-                                )}
-                              </div>
+                              )}
                             </div>
                           ),
                         )}
                       </div>
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="rounded-lg bg-amber-50 p-4">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-800">
+                        Beef Owner
+                      </p>
+                      <p className="mt-1 font-bold text-amber-950">
+                        No customer share name was found for this booking.
+                      </p>
+                    </div>
+                  )}
 
-                  <div className="rounded-lg border border-stone-200 bg-white p-5">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-600">
-                          Animal Quantity
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-stone-600">
-                          Change how many animals this customer is bringing.
-                        </p>
-                      </div>
-                      <div className="flex gap-3">
+                  <div className="rounded-lg border border-stone-200 bg-stone-50 p-5">
+                    <label className="block">
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-stone-600">
+                        Hanging Weight (lbs)
+                      </span>
+                      <div className="mt-2 flex flex-col gap-3 sm:flex-row">
                         <input
                           type="number"
-                          min="1"
-                          step="1"
-                          value={animalCountDraft}
-                          onChange={(event) => setAnimalCountDraft(event.target.value)}
-                          className="w-28 rounded-md border border-stone-300 bg-white px-4 py-3 text-center font-bold outline-none focus:border-red-800 focus:ring-2 focus:ring-red-100"
-                          aria-label="Number of animals"
+                          min="0"
+                          step="0.1"
+                          value={hangingWeight}
+                          onChange={(event) =>
+                            setHangingWeight(event.target.value)
+                          }
+                          placeholder="Enter hanging weight"
+                          className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-4 py-3 font-bold outline-none focus:border-red-800 focus:ring-2 focus:ring-red-100"
                         />
                         <button
                           type="button"
-                          onClick={saveAnimalCount}
-                          disabled={savingAnimalCount}
+                          onClick={saveHangingWeight}
+                          disabled={
+                            savingWeight ||
+                            selectedAppointment.animal_id === undefined
+                          }
                           className="rounded-md bg-stone-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {savingAnimalCount ? "Saving..." : "Save Quantity"}
+                          {savingWeight ? "Saving..." : "Save Hanging Weight"}
                         </button>
                       </div>
+                    </label>
+                  </div>
+
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-800">
+                          Customer Cut Sheet
+                        </p>
+                        <p className="mt-1 font-bold text-stone-950">
+                          {selectedAppointment.cut_sheet_unlocked
+                            ? "Unlocked"
+                            : "Locked"}
+                        </p>
+                      </div>
+                      {selectedAppointment.cut_sheet_token ? (
+                        <a
+                          href={`/cut-sheet/${String(selectedAppointment.cut_sheet_token)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-900 transition hover:bg-red-100"
+                        >
+                          View Cut Sheet Link
+                        </a>
+                      ) : null}
+                    </div>
+
+                    {selectedAppointment.cut_sheet_id ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            selectedAppointment.cut_sheet_unlocked
+                              ? copyCutSheetMessage()
+                              : unlockCutSheet(true)
+                          }
+                          disabled={Boolean(unlockingCutSheet)}
+                          className="rounded-md bg-red-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {unlockingCutSheet === "copy"
+                            ? "Unlocking..."
+                            : selectedAppointment.cut_sheet_unlocked
+                              ? "Copy Cut Sheet Message"
+                              : "Unlock + Copy Message"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => unlockCutSheet(false)}
+                          disabled={
+                            Boolean(unlockingCutSheet) ||
+                            Boolean(selectedAppointment.cut_sheet_unlocked)
+                          }
+                          className="rounded-md border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-stone-950 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {unlockingCutSheet === "no-copy"
+                            ? "Unlocking..."
+                            : selectedAppointment.cut_sheet_unlocked
+                              ? "Already Unlocked"
+                              : "Unlock Without Copying"}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="mt-4 rounded-md bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
+                        No cut sheet is connected to this appointment.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-800">
+                        Ready for Pickup
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-stone-700">
+                        Mark the animal ready and optionally copy the customer
+                        message for manual sending.
+                      </p>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => markReadyForPickup(true)}
+                        disabled={
+                          Boolean(pickupAction) ||
+                          selectedAppointment.animal_id === undefined
+                        }
+                        className="rounded-md bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {pickupAction === "copy"
+                          ? "Saving..."
+                          : "Ready for Pickup + Copy Message"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => markReadyForPickup(false)}
+                        disabled={
+                          Boolean(pickupAction) ||
+                          selectedAppointment.animal_id === undefined
+                        }
+                        className="rounded-md border border-emerald-300 bg-white px-4 py-3 text-sm font-bold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {pickupAction === "no-copy"
+                          ? "Saving..."
+                          : "Ready for Pickup Without Copying"}
+                      </button>
                     </div>
                   </div>
 
-                  {actionMessage ? (
-                    <p
-                      className="text-sm font-bold text-stone-700"
-                      aria-live="polite"
-                    >
-                      {actionMessage}
-                    </p>
+                  {getMessageCustomerPhone(selectedAppointment) ? (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Message Phone
+                      </p>
+                      <p className="mt-1 font-bold">
+                        {getMessageCustomerPhone(selectedAppointment)}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {getString(selectedAppointment, [
+                    "email",
+                    "customer_email",
+                  ]) ? (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Email
+                      </p>
+                      <p className="mt-1 break-all font-bold">
+                        {getString(selectedAppointment, [
+                          "email",
+                          "customer_email",
+                        ])}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {getString(selectedAppointment, [
+                    "notes",
+                    "customer_notes",
+                    "special_instructions",
+                    "comments",
+                  ]) ? (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-stone-500">
+                        Notes
+                      </p>
+                      <p className="mt-1 whitespace-pre-wrap text-stone-700">
+                        {getString(selectedAppointment, [
+                          "notes",
+                          "customer_notes",
+                          "special_instructions",
+                          "comments",
+                        ])}
+                      </p>
+                    </div>
                   ) : null}
                 </div>
 
